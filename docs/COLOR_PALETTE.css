@@ -1,0 +1,44 @@
+/* CSS HEX */
+--davys-gray: #4e4b4bff;
+--floral-white: #fffbf1ff;
+--mustard: #ffdb4cff;
+--aerospace-orange: #ff4f0fff;
+
+/* CSS HSL */
+--davys-gray: hsla(0, 2%, 30%, 1);
+--floral-white: hsla(43, 100%, 97%, 1);
+--mustard: hsla(48, 100%, 65%, 1);
+--aerospace-orange: hsla(16, 100%, 53%, 1);
+
+/* SCSS HEX */
+$davys-gray: #4e4b4bff;
+$floral-white: #fffbf1ff;
+$mustard: #ffdb4cff;
+$aerospace-orange: #ff4f0fff;
+
+/* SCSS HSL */
+$davys-gray: hsla(0, 2%, 30%, 1);
+$floral-white: hsla(43, 100%, 97%, 1);
+$mustard: hsla(48, 100%, 65%, 1);
+$aerospace-orange: hsla(16, 100%, 53%, 1);
+
+/* SCSS RGB */
+$davys-gray: rgba(78, 75, 75, 1);
+$floral-white: rgba(255, 251, 241, 1);
+$mustard: rgba(255, 219, 76, 1);
+$aerospace-orange: rgba(255, 79, 15, 1);
+
+/* SCSS Gradient */
+$gradient-top: linear-gradient(0deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-right: linear-gradient(90deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-bottom: linear-gradient(180deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-left: linear-gradient(270deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-top-right: linear-gradient(45deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-bottom-right: linear-gradient(135deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-top-left: linear-gradient(225deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-bottom-left: linear-gradient(315deg, #4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+$gradient-radial: radial-gradient(#4e4b4bff, #fffbf1ff, #ffdb4cff, #ff4f0fff);
+
+- Tailwind
+
+{ 'davy's_gray': { DEFAULT: '#4e4b4b', 100: '#100f0f', 200: '#1f1e1e', 300: '#2f2d2d', 400: '#3e3c3c', 500: '#4e4b4b', 600: '#726e6e', 700: '#969292', 800: '#b9b6b6', 900: '#dcdbdb' }, 'floral_white': { DEFAULT: '#fffbf1', 100: '#634700', 200: '#c68e00', 300: '#ffc32a', 400: '#ffdf8d', 500: '#fffbf1', 600: '#fffcf3', 700: '#fffcf6', 800: '#fffdf9', 900: '#fffefc' }, 'mustard': { DEFAULT: '#ffdb4c', 100: '#423500', 200: '#856a00', 300: '#c79f00', 400: '#ffce0a', 500: '#ffdb4c', 600: '#ffe270', 700: '#ffea94', 800: '#fff1b8', 900: '#fff8db' }, 'aerospace_orange': { DEFAULT: '#ff4f0f', 100: '#360e00', 200: '#6c1d00', 300: '#a22b00', 400: '#d83a00', 500: '#ff4f0f', 600: '#ff723f', 700: '#ff966f', 800: '#ffb99f', 900: '#ffdccf' } }
