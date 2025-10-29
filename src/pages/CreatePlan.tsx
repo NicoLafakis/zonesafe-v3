@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import WizardLayout, { WizardStep } from '../components/WizardLayout'
-import { PlanWizardProvider } from '../contexts/PlanWizardContext'
+import { PlanWizardProvider, usePlanWizard } from '../contexts/PlanWizardContext'
 import Step1Location from '../components/wizard/Step1Location'
 import Step2Timing from '../components/wizard/Step2Timing'
 import Step3Details from '../components/wizard/Step3Details'
@@ -20,6 +21,21 @@ const wizardSteps: WizardStep[] = [
 
 const CreatePlanContent = () => {
   const [currentStep, setCurrentStep] = useState(1)
+  const location = useLocation()
+  const { updateWorkType, resetPlan } = usePlanWizard()
+
+  // On initial load, if a workType was provided via navigation, set it and reset the plan
+  useEffect(() => {
+    const state = location.state as { workType?: any } | null
+    if (state?.workType) {
+      resetPlan()
+      updateWorkType(state.workType)
+      // Ensure we start at step 1
+      setCurrentStep(1)
+      // Note: we intentionally leave state as-is; React Router v6 state persists per navigation
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleNext = () => {
     if (currentStep < wizardSteps.length) {

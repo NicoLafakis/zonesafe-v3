@@ -6,11 +6,13 @@ import ViewPlan from './pages/ViewPlan'
 import EditPlan from './pages/EditPlan'
 import HelpSupport from './pages/HelpSupport'
 import Settings from './pages/Settings'
+import WorkTypeSelection from './pages/WorkTypeSelection'
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/work-types" element={<WorkTypeSelection />} />
       <Route path="/plans" element={<MyPlans />} />
       <Route path="/plans/new" element={<CreatePlan />} />
       <Route path="/plans/:planId" element={<ViewPlan />} />

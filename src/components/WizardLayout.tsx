@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
-import { Check } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, Check } from 'lucide-react'
 import { colors, spacing, typography, borderRadius } from '../styles/theme'
 
 export interface WizardStep {
@@ -32,6 +33,30 @@ const WizardLayout = ({ steps, currentStep, children, onStepClick }: WizardLayou
             margin: '0 auto',
           }}
         >
+          {/* Back to Categories */}
+          <div style={{ marginBottom: spacing.md }}>
+            <Link
+              to="/work-types"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: spacing.xs,
+                color: colors.textPrimary,
+                textDecoration: 'none',
+                fontWeight: typography.fontWeight.semibold,
+                padding: `${spacing.xs} ${spacing.sm}`,
+                borderRadius: borderRadius.sm,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = colors.background
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+              }}
+            >
+              <ArrowLeft size={18} /> Back to Categories
+            </Link>
+          </div>
           <div
             style={{
               display: 'flex',

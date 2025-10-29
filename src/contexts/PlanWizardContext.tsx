@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react'
 import type { WorkType } from '../lib/mutcd-calculation-engine'
 
 // Step 1: Location & Road Characteristics
@@ -54,6 +54,7 @@ export interface PlanWizardData {
 
 interface PlanWizardContextValue {
   planData: PlanWizardData
+  updateWorkType: (workType: WorkType) => void
   updateRoadData: (data: Partial<RoadData>) => void
   updateWorkTiming: (data: Partial<WorkTiming>) => void
   updateWorkZoneDetails: (data: Partial<WorkZoneDetails>) => void
@@ -75,57 +76,64 @@ const initialPlanData: PlanWizardData = {
 export const PlanWizardProvider = ({ children }: { children: ReactNode }) => {
   const [planData, setPlanData] = useState<PlanWizardData>(initialPlanData)
 
-  const updateRoadData = (data: Partial<RoadData>) => {
+  const updateRoadData = useCallback((data: Partial<RoadData>) => {
     setPlanData((prev) => ({
       ...prev,
       roadData: { ...prev.roadData, ...data },
     }))
-  }
+  }, [])
 
-  const updateWorkTiming = (data: Partial<WorkTiming>) => {
+  const updateWorkType = useCallback((workType: WorkType) => {
+    setPlanData((prev) => ({
+      ...prev,
+      workType,
+    }))
+  }, [])
+
+  const updateWorkTiming = useCallback((data: Partial<WorkTiming>) => {
     setPlanData((prev) => ({
       ...prev,
       workTiming: { ...prev.workTiming, ...data },
     }))
-  }
+  }, [])
 
-  const updateWorkZoneDetails = (data: Partial<WorkZoneDetails>) => {
+  const updateWorkZoneDetails = useCallback((data: Partial<WorkZoneDetails>) => {
     setPlanData((prev) => ({
       ...prev,
       workZoneDetails: { ...prev.workZoneDetails, ...data },
     }))
-  }
+  }, [])
 
-  const updateEquipment = (equipment: Equipment[]) => {
+  const updateEquipment = useCallback((equipment: Equipment[]) => {
     setPlanData((prev) => ({
       ...prev,
       equipment,
     }))
-  }
+  }, [])
 
-  const resetPlan = () => {
+  const resetPlan = useCallback(() => {
     setPlanData(initialPlanData)
-  }
+  }, [])
 
-  const loadPlan = (plan: PlanWizardData) => {
+  const loadPlan = useCallback((plan: PlanWizardData) => {
     setPlanData(plan)
-  }
+  }, [])
 
-  return (
-    <PlanWizardContext.Provider
-      value={{
-        planData,
-        updateRoadData,
-        updateWorkTiming,
-        updateWorkZoneDetails,
-        updateEquipment,
-        resetPlan,
-        loadPlan,
-      }}
-    >
-      {children}
-    </PlanWizardContext.Provider>
+  const value = useMemo(
+    () => ({
+      planData,
+      updateWorkType,
+      updateRoadData,
+      updateWorkTiming,
+      updateWorkZoneDetails,
+      updateEquipment,
+      resetPlan,
+      loadPlan,
+    }),
+    [planData, updateWorkType, updateRoadData, updateWorkTiming, updateWorkZoneDetails, updateEquipment, resetPlan, loadPlan]
   )
+
+  return <PlanWizardContext.Provider value={value}>{children}</PlanWizardContext.Provider>
 }
 
 export const usePlanWizard = () => {

@@ -62,8 +62,8 @@ const WorkTypeSelection = () => {
   const navigate = useNavigate()
 
   const handleSelectWorkType = (workType: WorkType) => {
-    // Navigate to create plan with work type in the URL or state
-    navigate('/plans/create', { state: { workType } })
+    // Navigate to Create Plan wizard with selected work type in navigation state
+    navigate('/plans/new', { state: { workType } })
   }
 
   return (

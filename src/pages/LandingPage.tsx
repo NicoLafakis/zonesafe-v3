@@ -10,7 +10,8 @@ const LandingPage = () => {
   const [showSaveModal, setShowSaveModal] = useState(false)
 
   const handleStartNewPlan = () => {
-    navigate('/plans/new')
+    // Go to the work type selection screen first
+    navigate('/work-types')
   }
 
   return (
