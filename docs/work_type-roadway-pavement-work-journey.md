@@ -13,7 +13,7 @@
 ## Step 1: Location & Road Characteristics
 
 ### User Actions
-1. User draws line segment on map to indicate work zone location
+1. User sets start and end pins on map to indicate work zone location
 2. System retrieves and displays road data
 
 ### Data Collection

@@ -13,7 +13,7 @@
 ## Step 1: Location & Road Characteristics
 
 ### User Actions
-1. User draws line segment on map along the shoulder where work will occur
+1. User sets start and end pins on map along the shoulder where work will occur
 2. User selects shoulder side (left/right)
 3. System retrieves and displays road data
 

@@ -13,7 +13,7 @@
 ## Step 1: Location & Bridge Characteristics
 
 ### User Actions
-1. User draws line segment on map along bridge structure
+1. User sets start and end pins on map along bridge structure
 2. System detects bridge and retrieves bridge data
 3. User confirms or manually identifies as bridge work
 4. System displays bridge-specific characteristics

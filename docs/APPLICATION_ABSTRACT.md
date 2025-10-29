@@ -63,6 +63,122 @@ The application ensures 100% compliance with:
 
 ---
 
+## Typical User Journey: Roadway Pavement Repair Example
+
+### Scenario Overview
+Mike, a road crew foreman with basic smartphone skills but no MUTCD training, needs to create a safety plan for emergency pothole repair on Main Street during morning rush hour. The work requires lane closure in a 35 mph zone near a school.
+
+### Step-by-Step Journey
+
+**1. Initial Access (30 seconds)**
+- Mike opens ZoneSafe on his phone while standing at the work site
+- Landing page immediately presents large orange "+ Start New Safety Plan" button
+- No account required - he taps to begin in guest mode
+- System begins comprehensive activity logging
+
+**2. Work Type Selection (45 seconds)**
+- Wizard presents 6 simplified work categories with visual icons
+- Mike selects "Roadway/Pavement Work" 
+- System internally tags this as lane-impacting work requiring full MUTCD compliance
+- Background: System queries cached data for this work type's typical requirements
+
+**3. Location Intelligence Gathering (60 seconds)**
+- Simple prompt: "Where is your work site?"
+- Mike types "Main St between 3rd and 4th Ave, downtown"
+- System processes location through HERE Maps API (cached if previously queried)
+- **Behind the scenes data collection:**
+  - Road geometry: 2-lane undivided, 35 mph speed limit
+  - Traffic volume: 15,000 AADT from cached DOT data
+  - Infrastructure: School zone marker 200ft north
+  - Intersection proximity: Signalized intersection 300ft south
+  - Historical weather patterns for current season
+- If location previously analyzed, retrieval takes <2 seconds vs 15+ seconds for new location
+
+**4. Work Scope Clarification (90 seconds)**
+- Conversational prompts: "How many lanes will you be working in?"
+- Mike selects "One lane (right lane)"
+- Follow-up: "How long will the work area be?"
+- Mike inputs "About 50 feet"
+- System calculates: Work zone = 50ft, but total controlled area = 850ft (including tapers)
+- **Data logging:** All user inputs, response times, and any corrections tracked
+
+**5. Duration and Timing (30 seconds)**
+- "When will you start work?" → "Right now (8:30 AM)"
+- "How long will it take?" → "About 2 hours"
+- System cross-references with school zone hours (7:30-8:30 AM, 2:30-3:30 PM)
+- **Intelligent recommendation:** Suggests expedited setup due to school zone proximity
+
+**6. Environmental Conditions (15 seconds - automated)**
+- System automatically queries OpenWeather API for current conditions
+- Temperature: 45°F, Clear, Wind: 5mph from SW
+- **Cached optimization:** If weather data for this location queried within last hour, uses cached data
+- Determines no weather-related plan modifications needed
+
+**7. AI Processing and Plan Generation (45 seconds)**
+- **Data synthesis:** AI processes all collected information:
+  - MUTCD Section 6C (temporary lane closures)
+  - State DOT variations for school zones
+  - Calculated taper lengths (315ft approach, 100ft departure for 35mph)
+  - Required signage sequence and spacing
+  - Flagging operation requirements due to school zone
+- **Historical data enhancement:** System references 12 previous plans created for similar Main Street locations
+- **Quality assurance:** Cross-checks plan against federal compliance database
+
+**8. Plan Review and Customization (2 minutes)**
+- Generated plan displays with visual diagram
+- **Key elements automatically determined:**
+  - Advance warning signs: 350ft, 200ft, 100ft upstream
+  - Lane closure taper: 315ft length
+  - Work space: 50ft with buffer zones
+  - Flagging stations positioned for school zone visibility
+  - Equipment placement for maximum safety
+- Mike reviews plan on mobile-optimized interface
+- One-tap option to request modifications if needed
+
+**9. Save Decision Point (30 seconds)**
+- Mike attempts to save plan
+- **Guest-to-account conversion modal appears:**
+  - "💾 Save Your Plan & Build Your History"
+  - Primary: "Create Free Account" (Google OAuth)
+  - Secondary: "Continue Without Saving"
+- Mike creates account to access plan from multiple devices
+
+**10. Final Output and Field Implementation (1 minute)**
+- **Comprehensive deliverables generated:**
+  - Printable PDF with equipment list and setup sequence
+  - Mobile-friendly reference showing sign placement distances
+  - Supply checklist: 8 signs, 12 cones, 2 flagger stations
+  - Setup timeline: 15 minutes before work begins
+- **Data completion:** Full transaction logged including plan effectiveness metrics setup
+
+### Total Journey Time: ~7 minutes (vs 45+ minutes traditional MUTCD manual consultation)
+
+### System Intelligence Gains
+**For this session:**
+- Main Street corridor data now cached for future users
+- School zone interaction patterns added to knowledge base
+- User interaction patterns logged for UX optimization
+- Plan effectiveness baseline established for follow-up tracking
+
+**For future users in this area:**
+- Instant location recognition and cached road data
+- Pre-populated environmental considerations
+- Refined AI recommendations based on historical success
+- Reduced API calls = faster performance + lower costs
+
+### Compliance Assurance
+Every step automatically ensures:
+- ✅ FHWA MUTCD 11th Edition compliance
+- ✅ State-specific school zone requirements
+- ✅ ADA pedestrian accommodation standards
+- ✅ Traffic volume-appropriate control measures
+- ✅ Weather condition considerations
+- ✅ Professional inspection readiness
+
+This journey transforms a complex regulatory process into an intuitive, mobile-friendly workflow while building institutional knowledge that benefits all future users.
+
+---
+
 ## Data Collection & Intelligence Strategy
 
 ### Comprehensive Data Tracking

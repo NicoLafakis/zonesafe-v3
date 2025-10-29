@@ -13,7 +13,7 @@
 ## Step 1: Location & Route Characteristics
 
 ### User Actions
-1. User draws route/path on map showing mobile operation path
+1. User sets start and end pins on map showing mobile operation path
 2. User specifies operation type
 3. System retrieves and displays road data along route
 
