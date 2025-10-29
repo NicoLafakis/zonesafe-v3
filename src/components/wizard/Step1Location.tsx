@@ -3,16 +3,15 @@ import { Info, Loader } from 'lucide-react'
 import { usePlanWizard } from '../../contexts/PlanWizardContext'
 import { colors, spacing, typography, borderRadius, shadows } from '../../styles/theme'
 import GoogleMapComponent from '../GoogleMapComponent'
-import { geocodeAddress, getRoadData, reverseGeocode, type LatLng } from '../../services/roadsAPI'
+import { geocodeAddress, getRoadData, calculatePathLength, reverseGeocode } from '../../services/roadsAPI'
 
 interface Step1LocationProps {
   onNext: () => void
-  onBack?: () => void
 }
 
-const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
+const Step1Location = ({ onNext }: Step1LocationProps) => {
   const { planData, updateRoadData } = usePlanWizard()
-  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.006 }) // Default to NYC
+  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.0060 }) // Default to NYC
   const [workZonePath, setWorkZonePath] = useState<google.maps.LatLngLiteral[]>([])
   const [loadingRoadData, setLoadingRoadData] = useState(false)
   const [searchAddress, setSearchAddress] = useState('')
@@ -49,26 +48,20 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
     setLoadingRoadData(false)
   }
 
-  const handlePinsMeasurementComplete = async (data: {
-    startPin: LatLng
-    endPin: LatLng
-    distanceMeters: number
-    routePath: LatLng[]
-  }) => {
-    // Convert route path to workZonePath format
-    setWorkZonePath(data.routePath)
+  const handleDrawComplete = async (path: google.maps.LatLngLiteral[]) => {
+    setWorkZonePath(path)
     setLoadingRoadData(true)
 
     try {
       // Get start and end addresses
-      const startAddress = await reverseGeocode(data.startPin.lat, data.startPin.lng)
-      const endAddress = await reverseGeocode(data.endPin.lat, data.endPin.lng)
+      const startAddress = await reverseGeocode(path[0].lat, path[0].lng)
+      const endAddress = await reverseGeocode(path[path.length - 1].lat, path[path.length - 1].lng)
 
       // Get road data from start point
-      const roadData = await getRoadData(data.startPin.lat, data.startPin.lng)
+      const roadData = await getRoadData(path[0].lat, path[0].lng)
 
-      // Convert distance from meters to feet
-      const workZoneLengthFeet = Math.round(data.distanceMeters * 3.28084)
+      // Calculate work zone length from path
+      const workZoneLengthFeet = calculatePathLength(path)
 
       if (roadData) {
         updateRoadData({
@@ -136,7 +129,7 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
           marginBottom: spacing.xl,
         }}
       >
-        Search for a location, then choose a measurement tool: draw a custom work zone path or measure the routed distance between two pins.
+        Search for a location or draw a line on the map to indicate your work zone.
       </p>
 
       {/* Address Search */}
@@ -214,7 +207,7 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
         <GoogleMapComponent
           center={mapCenter}
           zoom={15}
-          onPinsMeasurementComplete={handlePinsMeasurementComplete}
+          onDrawComplete={handleDrawComplete}
           workZonePath={workZonePath}
           height="500px"
         />
@@ -522,41 +515,11 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
       )}
 
       {/* Next Button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: spacing.md }}>
-        {onBack && (
-          <button
-            onClick={onBack}
-            style={{
-              padding: `${spacing.md} ${spacing.xl}`,
-              backgroundColor: colors.surface,
-              color: colors.primary,
-              fontSize: typography.fontSize.base,
-              fontWeight: typography.fontWeight.bold,
-              border: `2px solid ${colors.primary}`,
-              borderRadius: borderRadius.md,
-              cursor: 'pointer',
-              boxShadow: shadows.md,
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              const target = e.currentTarget as HTMLButtonElement
-              target.style.backgroundColor = colors.primary
-              target.style.color = colors.textLight
-            }}
-            onMouseLeave={(e) => {
-              const target = e.currentTarget as HTMLButtonElement
-              target.style.backgroundColor = colors.surface
-              target.style.color = colors.primary
-            }}
-          >
-            ← Back to Categories
-          </button>
-        )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           onClick={onNext}
           disabled={!canProceed}
           style={{
-            marginLeft: 'auto',
             padding: `${spacing.md} ${spacing.xl}`,
             backgroundColor: canProceed ? colors.primary : colors.neutralLight,
             color: colors.textLight,

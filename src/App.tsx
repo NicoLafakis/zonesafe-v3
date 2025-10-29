@@ -1,7 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import LandingPage from './pages/LandingPage'
 import MyPlans from './pages/MyPlans'
-import WorkTypeSelection from './pages/WorkTypeSelection'
 import CreatePlan from './pages/CreatePlan'
 import ViewPlan from './pages/ViewPlan'
 import EditPlan from './pages/EditPlan'
@@ -13,8 +12,7 @@ function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/plans" element={<MyPlans />} />
-      <Route path="/plans/new" element={<WorkTypeSelection />} />
-      <Route path="/plans/create" element={<CreatePlan />} />
+      <Route path="/plans/new" element={<CreatePlan />} />
       <Route path="/plans/:planId" element={<ViewPlan />} />
       <Route path="/plans/:planId/edit" element={<EditPlan />} />
       <Route path="/help" element={<HelpSupport />} />
