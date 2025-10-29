@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import WizardLayout, { WizardStep } from '../components/WizardLayout'
-import { PlanWizardProvider } from '../contexts/PlanWizardContext'
+import { PlanWizardProvider, usePlanWizard } from '../contexts/PlanWizardContext'
 import Step1Location from '../components/wizard/Step1Location'
 import Step2Timing from '../components/wizard/Step2Timing'
 import Step3Details from '../components/wizard/Step3Details'
 import Step4Equipment from '../components/wizard/Step4Equipment'
 import Step5Results from '../components/wizard/Step5Results'
 import { colors } from '../styles/theme'
+import type { WorkType } from '../lib/mutcd-calculation-engine'
 
 const wizardSteps: WizardStep[] = [
   { id: 1, title: 'Location', description: 'Road characteristics' },
@@ -19,43 +21,57 @@ const wizardSteps: WizardStep[] = [
 ]
 
 const CreatePlanContent = () => {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { setWorkType } = usePlanWizard()
   const [currentStep, setCurrentStep] = useState(1)
+
+  // Initialize work type from location state if provided
+  useEffect(() => {
+    const workType = (location.state as { workType?: WorkType } | null)?.workType
+    if (workType) {
+      setWorkType(workType)
+    }
+  }, [location.state, setWorkType])
 
   const handleNext = () => {
     if (currentStep < wizardSteps.length) {
       setCurrentStep(currentStep + 1)
-      window.scrollTo(0, 0)
+      globalThis.scrollTo(0, 0)
     }
   }
 
   const handleBack = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1)
-      window.scrollTo(0, 0)
+      globalThis.scrollTo(0, 0)
+    } else if (currentStep === 1) {
+      // Go back to work type selection
+      navigate('/plans/new')
     }
   }
 
   const handleStepClick = (stepId: number) => {
     if (stepId < currentStep) {
       setCurrentStep(stepId)
-      window.scrollTo(0, 0)
+      globalThis.scrollTo(0, 0)
     }
   }
 
   const handleEdit = () => {
     setCurrentStep(1)
-    window.scrollTo(0, 0)
+    globalThis.scrollTo(0, 0)
   }
 
   const handleStartNew = () => {
     // Reset wizard and go back to step 1
-    window.location.reload()
+    globalThis.location.reload()
   }
 
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return <Step1Location onNext={handleNext} />
+        return <Step1Location onNext={handleNext} onBack={handleBack} />
       case 2:
         return <Step2Timing onNext={handleNext} onBack={handleBack} />
       case 3:

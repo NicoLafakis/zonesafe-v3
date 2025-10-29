@@ -29,17 +29,49 @@ const GoogleMapComponent = ({
     libraries,
   })
 
-  const [, setMap] = useState<google.maps.Map | null>(null)
+  const [map, setMap] = useState<google.maps.Map | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [currentPath, setCurrentPath] = useState<google.maps.LatLngLiteral[]>([])
+  const [locationError, setLocationError] = useState<string | null>(null)
 
-  const onLoad = useCallback((map: google.maps.Map) => {
-    setMap(map)
+  const onLoad = useCallback((mapInstance: google.maps.Map) => {
+    setMap(mapInstance)
   }, [])
 
   const onUnmount = useCallback(() => {
     setMap(null)
   }, [])
+
+  const handleCenterToGPS = useCallback(() => {
+    if (!map) return
+
+    setLocationError(null)
+
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        const userLocation = { lat: latitude, lng: longitude }
+        map.panTo(userLocation)
+        map.setZoom(17)
+      },
+      (error) => {
+        let errorMessage = 'Unable to get your location'
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMessage = 'Location permission denied. Please enable location access in your browser settings.'
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMessage = 'Location information is unavailable.'
+        } else if (error.code === error.TIMEOUT) {
+          errorMessage = 'Location request timed out.'
+        }
+        setLocationError(errorMessage)
+      }
+    )
+  }, [map])
 
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
     if (e.latLng) {
@@ -180,9 +212,9 @@ const GoogleMapComponent = ({
         )}
 
         {/* Drawing points */}
-        {isDrawing && currentPath.map((point, index) => (
+        {isDrawing && currentPath.map((point) => (
           <Marker
-            key={index}
+            key={`${point.lat}-${point.lng}`}
             position={point}
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
@@ -198,50 +230,84 @@ const GoogleMapComponent = ({
 
       {/* Drawing controls */}
       {onDrawComplete && (
-        <div style={{
-          marginTop: '12px',
-          display: 'flex',
-          gap: '8px',
-          justifyContent: 'center',
-        }}>
-          {!isDrawing ? (
+        <>
+          {locationError && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              backgroundColor: colors.warning,
+              color: colors.textPrimary,
+              borderRadius: '8px',
+              fontSize: '14px',
+              marginBottom: '8px',
+            }}>
+              {locationError}
+            </div>
+          )}
+          <div style={{
+            marginTop: '12px',
+            display: 'flex',
+            gap: '8px',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+          }}>
+            {/* GPS Center Button */}
             <button
-              onClick={handleStartDrawing}
+              onClick={handleCenterToGPS}
               style={{
                 padding: '8px 16px',
-                backgroundColor: colors.primary,
+                backgroundColor: colors.neutral,
                 color: colors.textLight,
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 fontWeight: 600,
+                fontSize: '14px',
               }}
+              title="Center map on your current location"
             >
-              Draw Work Zone
+              📍 Center to GPS
             </button>
-          ) : (
-            <>
+
+            {isDrawing ? (
+              <>
+                <button
+                  onClick={handleFinishDrawing}
+                  disabled={currentPath.length < 2}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: currentPath.length < 2 ? colors.neutralLight : colors.success,
+                    color: colors.textLight,
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: currentPath.length < 2 ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                    opacity: currentPath.length < 2 ? 0.5 : 1,
+                  }}
+                >
+                  Finish Drawing ({currentPath.length} points)
+                </button>
+                <button
+                  onClick={handleCancelDrawing}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: colors.neutral,
+                    color: colors.textLight,
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
               <button
-                onClick={handleFinishDrawing}
-                disabled={currentPath.length < 2}
+                onClick={handleStartDrawing}
                 style={{
                   padding: '8px 16px',
-                  backgroundColor: currentPath.length < 2 ? colors.neutralLight : colors.success,
-                  color: colors.textLight,
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: currentPath.length < 2 ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                  opacity: currentPath.length < 2 ? 0.5 : 1,
-                }}
-              >
-                Finish Drawing ({currentPath.length} points)
-              </button>
-              <button
-                onClick={handleCancelDrawing}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: colors.neutral,
+                  backgroundColor: colors.primary,
                   color: colors.textLight,
                   border: 'none',
                   borderRadius: '8px',
@@ -249,11 +315,11 @@ const GoogleMapComponent = ({
                   fontWeight: 600,
                 }}
               >
-                Cancel
+                Draw Work Zone
               </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

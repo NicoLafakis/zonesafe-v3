@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, ReactNode, useMemo } from 'react'
 import type { WorkType } from '../lib/mutcd-calculation-engine'
 
 // Step 1: Location & Road Characteristics
@@ -58,6 +58,7 @@ interface PlanWizardContextValue {
   updateWorkTiming: (data: Partial<WorkTiming>) => void
   updateWorkZoneDetails: (data: Partial<WorkZoneDetails>) => void
   updateEquipment: (equipment: Equipment[]) => void
+  setWorkType: (workType: WorkType) => void
   resetPlan: () => void
   loadPlan: (plan: PlanWizardData) => void
 }
@@ -103,6 +104,13 @@ export const PlanWizardProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
+  const setWorkType = (workType: WorkType) => {
+    setPlanData((prev) => ({
+      ...prev,
+      workType,
+    }))
+  }
+
   const resetPlan = () => {
     setPlanData(initialPlanData)
   }
@@ -111,18 +119,22 @@ export const PlanWizardProvider = ({ children }: { children: ReactNode }) => {
     setPlanData(plan)
   }
 
+  const contextValue = useMemo(
+    () => ({
+      planData,
+      updateRoadData,
+      updateWorkTiming,
+      updateWorkZoneDetails,
+      updateEquipment,
+      setWorkType,
+      resetPlan,
+      loadPlan,
+    }),
+    [planData]
+  )
+
   return (
-    <PlanWizardContext.Provider
-      value={{
-        planData,
-        updateRoadData,
-        updateWorkTiming,
-        updateWorkZoneDetails,
-        updateEquipment,
-        resetPlan,
-        loadPlan,
-      }}
-    >
+    <PlanWizardContext.Provider value={contextValue}>
       {children}
     </PlanWizardContext.Provider>
   )

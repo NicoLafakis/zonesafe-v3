@@ -7,9 +7,10 @@ import { geocodeAddress, getRoadData, calculatePathLength, reverseGeocode } from
 
 interface Step1LocationProps {
   onNext: () => void
+  onBack?: () => void
 }
 
-const Step1Location = ({ onNext }: Step1LocationProps) => {
+const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
   const { planData, updateRoadData } = usePlanWizard()
   const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.0060 }) // Default to NYC
   const [workZonePath, setWorkZonePath] = useState<google.maps.LatLngLiteral[]>([])
@@ -515,11 +516,41 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
       )}
 
       {/* Next Button */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: spacing.md }}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              padding: `${spacing.md} ${spacing.xl}`,
+              backgroundColor: colors.surface,
+              color: colors.primary,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.bold,
+              border: `2px solid ${colors.primary}`,
+              borderRadius: borderRadius.md,
+              cursor: 'pointer',
+              boxShadow: shadows.md,
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              const target = e.currentTarget as HTMLButtonElement
+              target.style.backgroundColor = colors.primary
+              target.style.color = colors.textLight
+            }}
+            onMouseLeave={(e) => {
+              const target = e.currentTarget as HTMLButtonElement
+              target.style.backgroundColor = colors.surface
+              target.style.color = colors.primary
+            }}
+          >
+            ← Back to Categories
+          </button>
+        )}
         <button
           onClick={onNext}
           disabled={!canProceed}
           style={{
+            marginLeft: 'auto',
             padding: `${spacing.md} ${spacing.xl}`,
             backgroundColor: canProceed ? colors.primary : colors.neutralLight,
             color: colors.textLight,
