@@ -17,6 +17,7 @@ import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { colors, spacing, typography, shadows, borderRadius } from '../styles/theme'
 import { plansAPI, PlanDetail } from '../services/api'
+import { generatePlanPDF } from '../services/pdfGenerator'
 
 const ViewPlan = () => {
   const { planId } = useParams()
@@ -49,8 +50,7 @@ const ViewPlan = () => {
   const handleExport = async () => {
     if (!plan) return
     try {
-      await plansAPI.export(plan.id)
-      alert('PDF export coming soon!')
+      await generatePlanPDF(plan)
     } catch (err) {
       alert('Export failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
