@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react'
-import { GoogleMap, useJsApiLoader, Polyline, Marker } from '@react-google-maps/api'
+import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api'
 import { colors } from '../styles/theme'
 
 const libraries: ("drawing" | "places" | "geometry")[] = ["places", "geometry"]
@@ -79,9 +79,13 @@ const GoogleMapComponent = ({
     )
   }
 
-  const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+  const handleMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
     if (e.latLng && isPlacingPin && !isDraggingStart && !isDraggingEnd) {
-      const position = { lat: e.latLng.lat(), lng: e.latLng.lng() }
+      const clickedPosition = { lat: e.latLng.lat(), lng: e.latLng.lng() }
+
+      // Snap to nearest road
+      const snappedPosition = await snapToRoad(clickedPosition)
+      const position = snappedPosition || clickedPosition
 
       if (!localStartPin) {
         // Place start pin
@@ -92,6 +96,32 @@ const GoogleMapComponent = ({
       }
     }
   }, [isPlacingPin, localStartPin, localEndPin, pinMode, isDraggingStart, isDraggingEnd])
+
+  // Snap point to nearest road using Google Roads API
+  const snapToRoad = async (point: google.maps.LatLngLiteral): Promise<google.maps.LatLngLiteral | null> => {
+    try {
+      const response = await fetch(
+        `https://roads.googleapis.com/v1/snapToRoads?path=${point.lat},${point.lng}&key=${import.meta.env.VITE_GOOGLE_ROADS_API_KEY}`
+      )
+      
+      if (!response.ok) return null
+      
+      const data = await response.json()
+      
+      if (data.snappedPoints && data.snappedPoints.length > 0) {
+        const snapped = data.snappedPoints[0]
+        return {
+          lat: snapped.location.latitude,
+          lng: snapped.location.longitude,
+        }
+      }
+      
+      return null
+    } catch (error) {
+      console.warn('Road snapping failed:', error)
+      return null
+    }
+  }
 
   const handleStartPlacingPins = () => {
     setIsPlacingPin(true)
@@ -191,14 +221,6 @@ const GoogleMapComponent = ({
     clickableIcons: false,
   }
 
-  // Polyline connecting two pins (for dual mode)
-  const lineOptions: google.maps.PolylineOptions = {
-    strokeColor: colors.primary,
-    strokeOpacity: 0.8,
-    strokeWeight: 4,
-    clickable: false,
-  }
-
   const pinsPlaced = pinMode === 'single' ? !!localStartPin : !!(localStartPin && localEndPin)
   const distance = calculateDistance()
 
@@ -260,14 +282,6 @@ const GoogleMapComponent = ({
               strokeColor: colors.surface,
               strokeWeight: 3,
             }}
-          />
-        )}
-
-        {/* Line connecting pins (dual mode only) */}
-        {pinMode === 'dual' && localStartPin && localEndPin && (
-          <Polyline
-            path={[localStartPin, localEndPin]}
-            options={lineOptions}
           />
         )}
       </GoogleMap>

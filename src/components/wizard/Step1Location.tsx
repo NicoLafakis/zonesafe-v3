@@ -74,6 +74,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
       // Get end address if dual mode
       let endAddress = ''
       let workZoneLengthFeet = 0
+      let endSpeedLimit = undefined
       
       if (pins.end && pinMode === 'dual') {
         endAddress = await reverseGeocode(pins.end.lat, pins.end.lng)
@@ -84,6 +85,12 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           const end = new window.google.maps.LatLng(pins.end.lat, pins.end.lng)
           const meters = window.google.maps.geometry.spherical.computeDistanceBetween(start, end)
           workZoneLengthFeet = Math.round(meters * 3.28084)
+        }
+        
+        // Get road data for END location to check if speed limit differs
+        const endRoadData = await getRoadData(pins.end.lat, pins.end.lng)
+        if (endRoadData) {
+          endSpeedLimit = endRoadData.speedLimit
         }
       }
 
@@ -96,6 +103,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           startAddress: startAddress || 'Unknown',
           endAddress: endAddress || startAddress || 'Unknown',
           speedLimit: roadData.speedLimit,
+          endSpeedLimit: endSpeedLimit,
           laneCount: roadData.laneCount,
           laneCountSource: roadData.laneCountSource,
           laneCountConfidence: roadData.confidence,
@@ -684,7 +692,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
             </div>
           )}
 
-          {/* Start and End Addresses */}
+          {/* Start and End Addresses with Speed Limits */}
           <div
             style={{
               display: 'grid',
@@ -693,6 +701,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
               marginBottom: spacing.lg,
             }}
           >
+            {/* Start Column */}
             <div>
               <label
                 style={{
@@ -717,48 +726,11 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                   borderRadius: borderRadius.md,
                   backgroundColor: '#f5f5f5',
                   color: colors.textSecondary,
+                  marginBottom: spacing.md,
                 }}
               />
-            </div>
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: typography.fontSize.base,
-                  fontWeight: typography.fontWeight.semibold,
-                  color: colors.textPrimary,
-                  marginBottom: spacing.sm,
-                }}
-              >
-                End Address
-              </label>
-              <input
-                type="text"
-                value={planData.roadData.endAddress || ''}
-                readOnly
-                style={{
-                  width: '100%',
-                  padding: spacing.md,
-                  fontSize: typography.fontSize.base,
-                  border: `1px solid ${colors.neutralLight}`,
-                  borderRadius: borderRadius.md,
-                  backgroundColor: '#f5f5f5',
-                  color: colors.textSecondary,
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Speed Limit and Lane Count */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: spacing.lg,
-              marginBottom: spacing.lg,
-            }}
-          >
-            <div>
+              
+              {/* Start Speed Limit */}
               <label
                 style={{
                   display: 'block',
@@ -788,6 +760,8 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                 }}
               />
             </div>
+
+            {/* End Column */}
             <div>
               <label
                 style={{
@@ -798,41 +772,104 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                   marginBottom: spacing.sm,
                 }}
               >
-                Total Lanes
-                <ConfidenceBadge
-                  source={planData.roadData.laneCountSource || 'google'}
-                  confidence={planData.roadData.laneCountConfidence || 100}
-                />
+                End Address
               </label>
               <input
-                type="number"
-                value={planData.roadData.laneCount || ''}
-                onChange={(e) => handleFieldChange('laneCount', parseInt(e.target.value))}
+                type="text"
+                value={planData.roadData.endAddress || ''}
+                readOnly
                 style={{
                   width: '100%',
                   padding: spacing.md,
                   fontSize: typography.fontSize.base,
                   border: `1px solid ${colors.neutralLight}`,
                   borderRadius: borderRadius.md,
-                  backgroundColor: colors.surface,
+                  backgroundColor: '#f5f5f5',
+                  color: colors.textSecondary,
+                  marginBottom: spacing.md,
                 }}
               />
+              
+              {/* End Speed Limit - only show if different from start */}
+              {pinMode === 'dual' && planData.roadData.endSpeedLimit && (
+                <>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: typography.fontSize.base,
+                      fontWeight: typography.fontWeight.semibold,
+                      color: colors.textPrimary,
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    End Speed Limit (mph)
+                    <ConfidenceBadge
+                      source={planData.roadData.laneCountSource || 'google'}
+                      confidence={planData.roadData.laneCountConfidence || 100}
+                    />
+                  </label>
+                  <input
+                    type="number"
+                    value={planData.roadData.endSpeedLimit || ''}
+                    onChange={(e) => handleFieldChange('endSpeedLimit', parseInt(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.base,
+                      border: `1px solid ${colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                      backgroundColor: colors.surface,
+                    }}
+                  />
+                </>
+              )}
             </div>
           </div>
 
-          {/* Lane Selector */}
+          {/* Lane Selector with Total Lanes inline */}
           <div style={{ marginBottom: spacing.lg }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: typography.fontSize.base,
-                fontWeight: typography.fontWeight.semibold,
-                color: colors.textPrimary,
-                marginBottom: spacing.sm,
-              }}
-            >
-              Select Lanes to Close
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+              <label
+                style={{
+                  fontSize: typography.fontSize.base,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.textPrimary,
+                }}
+              >
+                Select Lanes to Close
+              </label>
+              
+              {/* Total Lanes inline */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+                <label
+                  style={{
+                    fontSize: typography.fontSize.sm,
+                    fontWeight: typography.fontWeight.semibold,
+                    color: colors.textPrimary,
+                  }}
+                >
+                  Total Lanes:
+                </label>
+                <input
+                  type="number"
+                  value={planData.roadData.laneCount || ''}
+                  onChange={(e) => handleFieldChange('laneCount', parseInt(e.target.value))}
+                  style={{
+                    width: '80px',
+                    padding: spacing.sm,
+                    fontSize: typography.fontSize.base,
+                    border: `1px solid ${colors.neutralLight}`,
+                    borderRadius: borderRadius.md,
+                    backgroundColor: colors.surface,
+                    textAlign: 'center',
+                  }}
+                />
+                <ConfidenceBadge
+                  source={planData.roadData.laneCountSource || 'google'}
+                  confidence={planData.roadData.laneCountConfidence || 100}
+                />
+              </div>
+            </div>
             <p style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, marginBottom: spacing.md }}>
               Click on lanes to toggle closure (at least one lane must be closed)
             </p>

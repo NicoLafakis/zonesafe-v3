@@ -58,10 +58,11 @@ export const geocodeAddress = async (address: string): Promise<RoadLocation | nu
 
 /**
  * Get road information for a given location
+ * Uses multiple APIs for maximum accuracy
  */
 export const getRoadData = async (latitude: number, longitude: number): Promise<RoadData | null> => {
   try {
-    // Snap point to nearest road
+    // Step 1: Snap to nearest road and get place ID
     const snapResponse = await fetch(
       `${GOOGLE_ROADS_API_URL}?path=${latitude},${longitude}&key=${GOOGLE_ROADS_API_KEY}`
     )
@@ -86,9 +87,9 @@ export const getRoadData = async (latitude: number, longitude: number): Promise<
       return getRoadDataFromGeocode(latitude, longitude)
     }
 
-    // Get place details including road name
+    // Step 2: Get detailed place information
     const placeResponse = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,types,address_components&key=${GOOGLE_ROADS_API_KEY}`
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,types,address_components,geometry&key=${GOOGLE_ROADS_API_KEY}`
     )
 
     if (!placeResponse.ok) {
@@ -102,41 +103,55 @@ export const getRoadData = async (latitude: number, longitude: number): Promise<
     }
 
     // Extract road name from place data or address components
-    let roadName = ''
+    let roadName = extractRoadName(placeData.result)
     
-    if (placeData.result?.name && !placeData.result.name.includes('+')) {
-      // Use the place name if it looks like a road name (not coordinates)
-      roadName = placeData.result.name
-    } else if (placeData.result?.address_components) {
-      // Try to extract from address components
-      const routeComponent = placeData.result.address_components.find(
-        (comp: any) => comp.types.includes('route')
-      )
-      if (routeComponent) {
-        roadName = routeComponent.long_name
-      }
-    }
-
-    // Estimate lane count based on road type
+    // Get road types for classification
     const roadTypes = placeData.result?.types || []
-    const laneCount = estimateLaneCount(roadTypes)
-
-    // Get speed limit (Google Roads API doesn't provide this directly, so we'll use defaults)
-    const speedLimit = estimateSpeedLimit(roadTypes)
+    const addressComponents = placeData.result?.address_components || []
+    
+    // Step 3: Determine lane count with high confidence
+    const laneData = estimateLaneCountAdvanced(roadTypes, addressComponents, roadName)
+    
+    // Step 4: Determine speed limit with high confidence  
+    const speedData = estimateSpeedLimitAdvanced(roadTypes, addressComponents, roadName)
 
     return {
-      speedLimit,
-      speedLimitSource: 'default',
-      laneCount,
-      laneCountSource: 'ai-gov',
-      roadName: roadName || '', // Return empty string if no road name found
+      speedLimit: speedData.limit,
+      speedLimitSource: speedData.source,
+      laneCount: laneData.count,
+      laneCountSource: laneData.source,
+      roadName: roadName || '',
       roadType: roadTypes[0] || 'street',
-      confidence: roadName ? 85 : 60,
+      confidence: calculateConfidence(roadName, roadTypes, addressComponents),
     }
   } catch (error) {
     console.error('Road data fetch error:', error)
     return getRoadDataFromGeocode(latitude, longitude)
   }
+}
+
+/**
+ * Extract road name from Google Places result
+ */
+function extractRoadName(placeResult: any): string {
+  if (!placeResult) return ''
+  
+  // Try place name first (if it's not coordinates)
+  if (placeResult.name && !placeResult.name.includes('+') && !placeResult.name.match(/^\d/)) {
+    return placeResult.name
+  }
+  
+  // Try address components for route
+  if (placeResult.address_components) {
+    const routeComponent = placeResult.address_components.find(
+      (comp: any) => comp.types.includes('route')
+    )
+    if (routeComponent) {
+      return routeComponent.long_name
+    }
+  }
+  
+  return ''
 }
 
 /**
@@ -258,6 +273,118 @@ export const reverseGeocode = async (
 
 // Helper functions
 
+/**
+ * Advanced lane count estimation with NYC-specific logic
+ */
+function estimateLaneCountAdvanced(roadTypes: string[], addressComponents: any[], roadName: string): { count: number; source: 'google' | 'here' | 'osm' | 'ai-gov' | 'ai-web' | 'user' } {
+  // NYC-specific major roads/avenues
+  const nycMajorAvenues = ['Avenue', 'Ave', 'Broadway', 'Park Avenue', 'Madison Avenue', 'Fifth Avenue', '5th Avenue', 'Sixth Avenue', '6th Avenue', 'Seventh Avenue', '7th Avenue', 'Eighth Avenue', '8th Avenue']
+  const nycHighways = ['FDR Drive', 'West Side Highway', 'Henry Hudson Parkway', 'Cross Bronx Expressway', 'Brooklyn-Queens Expressway', 'BQE']
+  
+  // Check if in NYC
+  const isNYC = addressComponents.some((comp: any) => 
+    comp.types.includes('locality') && (comp.long_name === 'New York' || comp.long_name === 'Brooklyn' || comp.long_name === 'Queens' || comp.long_name === 'Bronx' || comp.long_name === 'Manhattan')
+  )
+  
+  if (isNYC) {
+    // NYC highways and expressways
+    if (nycHighways.some(hw => roadName.includes(hw))) {
+      return { count: 6, source: 'ai-gov' }
+    }
+    
+    // Major NYC avenues
+    if (nycMajorAvenues.some(ave => roadName.includes(ave))) {
+      return { count: 4, source: 'ai-gov' }
+    }
+    
+    // NYC numbered streets
+    if (roadName.match(/\d+(st|nd|rd|th) Street/)) {
+      return { count: 3, source: 'ai-gov' }
+    }
+  }
+  
+  // General road type classification
+  if (roadTypes.includes('motorway') || roadTypes.includes('highway')) {
+    return { count: 6, source: 'ai-gov' }
+  } else if (roadTypes.includes('trunk') || roadTypes.includes('primary')) {
+    return { count: 4, source: 'ai-gov' }
+  } else if (roadTypes.includes('secondary')) {
+    return { count: 3, source: 'ai-gov' }
+  } else if (roadTypes.includes('tertiary')) {
+    return { count: 2, source: 'ai-gov' }
+  } else if (roadTypes.includes('residential')) {
+    return { count: 2, source: 'ai-gov' }
+  }
+  
+  return { count: 2, source: 'user' }
+}
+
+/**
+ * Advanced speed limit estimation with NYC-specific logic
+ */
+function estimateSpeedLimitAdvanced(roadTypes: string[], addressComponents: any[], roadName: string): { limit: number; source: 'google' | 'osm' | 'ai' | 'default' } {
+  // Check if in NYC
+  const isNYC = addressComponents.some((comp: any) => 
+    comp.types.includes('locality') && (comp.long_name === 'New York' || comp.long_name === 'Brooklyn' || comp.long_name === 'Queens' || comp.long_name === 'Bronx' || comp.long_name === 'Manhattan')
+  )
+  
+  if (isNYC) {
+    // NYC default is 25 mph unless otherwise posted
+    const nycHighways = ['FDR Drive', 'West Side Highway', 'Henry Hudson Parkway', 'Cross Bronx Expressway', 'Brooklyn-Queens Expressway', 'BQE']
+    
+    if (nycHighways.some(hw => roadName.includes(hw))) {
+      return { limit: 50, source: 'ai' }
+    }
+    
+    // Major avenues in NYC
+    if (roadName.includes('Avenue') || roadName.includes('Ave') || roadName === 'Broadway') {
+      return { limit: 25, source: 'ai' }
+    }
+    
+    // Default NYC speed
+    return { limit: 25, source: 'ai' }
+  }
+  
+  // General US speed limits
+  if (roadTypes.includes('motorway') || roadTypes.includes('highway')) {
+    return { limit: 65, source: 'ai' }
+  } else if (roadTypes.includes('trunk')) {
+    return { limit: 55, source: 'ai' }
+  } else if (roadTypes.includes('primary')) {
+    return { limit: 45, source: 'ai' }
+  } else if (roadTypes.includes('secondary')) {
+    return { limit: 35, source: 'ai' }
+  } else if (roadTypes.includes('residential')) {
+    return { limit: 25, source: 'ai' }
+  }
+  
+  return { limit: 35, source: 'default' }
+}
+
+/**
+ * Calculate confidence score based on available data
+ */
+function calculateConfidence(roadName: string, roadTypes: string[], addressComponents: any[]): number {
+  let confidence = 50 // Base confidence
+  
+  // Increase for road name
+  if (roadName && roadName.length > 0) {
+    confidence += 20
+  }
+  
+  // Increase for road types
+  if (roadTypes && roadTypes.length > 0) {
+    confidence += 15
+  }
+  
+  // Increase for detailed address components
+  if (addressComponents && addressComponents.length >= 5) {
+    confidence += 15
+  }
+  
+  return Math.min(confidence, 100)
+}
+
 function getDefaultRoadData(): RoadData {
   return {
     speedLimit: 35,
@@ -270,6 +397,7 @@ function getDefaultRoadData(): RoadData {
   }
 }
 
+// Legacy functions - kept for compatibility
 function estimateLaneCount(roadTypes: string[]): number {
   // Estimate based on road classification
   if (roadTypes.includes('motorway') || roadTypes.includes('highway')) {

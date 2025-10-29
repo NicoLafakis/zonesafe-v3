@@ -7,6 +7,7 @@ export interface RoadData {
   startAddress: string
   endAddress: string
   speedLimit: number
+  endSpeedLimit?: number // Speed limit at end location (for different streets)
   laneCount: number
   laneCountSource: 'google' | 'here' | 'osm' | 'ai-gov' | 'ai-web' | 'user'
   laneCountConfidence: number
