@@ -59,8 +59,8 @@ interface ShoulderRoadData {
 ```
 
 ### UI Behavior
-- Nothing displays until line segment is drawn
-- After drawing, shoulder side selection appears
+- Nothing displays until line segment is set
+- After setting pins, shoulder side selection appears
 - After shoulder side selected, page scrolls down to reveal road data
 - "Work encroaches into lane?" toggle appears prominently
 - All editable fields show confidence badges

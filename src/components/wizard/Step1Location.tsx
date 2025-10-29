@@ -129,7 +129,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           marginBottom: spacing.xl,
         }}
       >
-        Search for a location or draw a line on the map to indicate your work zone.
+        Search for a location or start and end pins map to indicate your work zone.
       </p>
 
       {/* Address Search */}
