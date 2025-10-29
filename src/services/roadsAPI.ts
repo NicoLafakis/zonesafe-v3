@@ -6,6 +6,8 @@
 const GOOGLE_ROADS_API_KEY = import.meta.env.VITE_GOOGLE_ROADS_API_KEY || ''
 const GOOGLE_GEOCODING_API_URL = 'https://maps.googleapis.com/maps/api/geocode/json'
 const GOOGLE_ROADS_API_URL = 'https://roads.googleapis.com/v1/snapToRoads'
+const GOOGLE_NEAREST_ROADS_API_URL = 'https://roads.googleapis.com/v1/nearestRoads'
+const GOOGLE_DIRECTIONS_API_URL = 'https://maps.googleapis.com/maps/api/directions/json'
 
 export interface RoadLocation {
   address: string
@@ -22,6 +24,17 @@ export interface RoadData {
   roadName: string
   roadType: string
   confidence: number
+}
+
+export interface LatLng {
+  lat: number
+  lng: number
+}
+
+export interface RoutedPathResult {
+  distanceMeters: number
+  path: LatLng[]
+  encodedPolyline: string
 }
 
 /**
@@ -180,6 +193,165 @@ export const reverseGeocode = async (
     console.error('Reverse geocoding error:', error)
     return null
   }
+}
+
+/**
+ * Snap a point to the nearest road
+ * @param point - The point to snap
+ * @param maxMeters - Maximum distance in meters to search for a road (default: 30)
+ * @returns The snapped point or null if no road found within threshold
+ */
+export const snapToNearestRoad = async (
+  point: LatLng,
+  maxMeters: number = 30
+): Promise<LatLng | null> => {
+  try {
+    const url = `${GOOGLE_NEAREST_ROADS_API_URL}?points=${point.lat},${point.lng}&key=${GOOGLE_ROADS_API_KEY}`
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      throw new Error('Nearest roads API request failed')
+    }
+
+    const data = await response.json()
+    const snappedPoint = data.snappedPoints?.[0]
+
+    if (!snappedPoint?.location) {
+      return null
+    }
+
+    const snappedLatLng: LatLng = {
+      lat: snappedPoint.location.latitude,
+      lng: snappedPoint.location.longitude,
+    }
+
+    // Calculate distance between original and snapped point
+    const distanceMeters = calculateDistance(point, snappedLatLng) / 3.28084 // Convert feet back to meters
+
+    // Only return snapped point if within threshold
+    return distanceMeters <= maxMeters ? snappedLatLng : null
+  } catch (error) {
+    console.error('Snap to nearest road error:', error)
+    return null
+  }
+}
+
+/**
+ * Get routed path and distance between two points using Google Directions API
+ * @param origin - Starting point
+ * @param destination - Ending point
+ * @returns Route information including distance and path
+ */
+export const getRoutedPathAndDistance = async (
+  origin: LatLng,
+  destination: LatLng
+): Promise<RoutedPathResult | null> => {
+  try {
+    const url = `${GOOGLE_DIRECTIONS_API_URL}?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&mode=driving&key=${GOOGLE_ROADS_API_KEY}`
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      throw new Error('Directions API request failed')
+    }
+
+    const data = await response.json()
+
+    if (data.status !== 'OK' || !data.routes || data.routes.length === 0) {
+      return null
+    }
+
+    const route = data.routes[0]
+    const leg = route.legs[0]
+    const distanceMeters = leg.distance.value
+    const encodedPolyline = route.overview_polyline.points
+
+    // Decode the polyline to get the path
+    const path = decodePolyline(encodedPolyline)
+
+    return {
+      distanceMeters,
+      path,
+      encodedPolyline,
+    }
+  } catch (error) {
+    console.error('Get routed path error:', error)
+    return null
+  }
+}
+
+/**
+ * Decode a Google Maps encoded polyline string into an array of LatLng points
+ * @param encoded - The encoded polyline string
+ * @returns Array of LatLng points
+ */
+export const decodePolyline = (encoded: string): LatLng[] => {
+  const points: LatLng[] = []
+  let index = 0
+  let lat = 0
+  let lng = 0
+
+  while (index < encoded.length) {
+    let b: number
+    let shift = 0
+    let result = 0
+
+    // Decode latitude
+    do {
+      b = encoded.charCodeAt(index++) - 63
+      result |= (b & 0x1f) << shift
+      shift += 5
+    } while (b >= 0x20)
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1
+    lat += dlat
+
+    shift = 0
+    result = 0
+
+    // Decode longitude
+    do {
+      b = encoded.charCodeAt(index++) - 63
+      result |= (b & 0x1f) << shift
+      shift += 5
+    } while (b >= 0x20)
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1
+    lng += dlng
+
+    points.push({
+      lat: lat / 1e5,
+      lng: lng / 1e5,
+    })
+  }
+
+  return points
+}
+
+/**
+ * Format distance for display in both metric and imperial units
+ * @param meters - Distance in meters
+ * @returns Formatted string with both units
+ */
+export const formatDistance = (meters: number): string => {
+  const feet = meters * 3.28084
+  const miles = feet / 5280
+
+  // Metric formatting
+  let metricStr: string
+  if (meters < 1000) {
+    metricStr = `${Math.round(meters)} m`
+  } else {
+    const km = meters / 1000
+    metricStr = `${km.toFixed(2)} km`
+  }
+
+  // Imperial formatting
+  let imperialStr: string
+  if (feet < 1000) {
+    imperialStr = `${Math.round(feet)} ft`
+  } else {
+    imperialStr = `${miles.toFixed(2)} mi`
+  }
+
+  return `${metricStr} (${imperialStr})`
 }
 
 // Helper functions
