@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState } from 'react'
 import { GoogleMap, useJsApiLoader, Polyline, Marker } from '@react-google-maps/api'
 import { colors } from '../styles/theme'
 import {
@@ -7,19 +7,15 @@ import {
   formatDistance,
   type LatLng,
 } from '../services/roadsAPI'
-import type { MeasurementMode } from './MeasurementToolSelector'
 
 const libraries: ("drawing" | "places" | "geometry")[] = ["drawing", "places", "geometry"]
 
 interface GoogleMapComponentProps {
   center: { lat: number; lng: number }
   zoom?: number
-  onLocationSelect?: (location: google.maps.LatLngLiteral) => void
-  onDrawComplete?: (path: google.maps.LatLngLiteral[]) => void
   workZonePath?: google.maps.LatLngLiteral[]
   markerPosition?: google.maps.LatLngLiteral
   height?: string
-  measurementMode?: MeasurementMode
   onPinsMeasurementComplete?: (data: {
     startPin: LatLng
     endPin: LatLng
@@ -31,12 +27,9 @@ interface GoogleMapComponentProps {
 const GoogleMapComponent = ({
   center,
   zoom = 15,
-  onLocationSelect,
-  onDrawComplete,
   workZonePath = [],
   markerPosition,
   height = '400px',
-  measurementMode = 'none',
   onPinsMeasurementComplete,
 }: GoogleMapComponentProps) => {
   const { isLoaded, loadError } = useJsApiLoader({
@@ -46,8 +39,6 @@ const GoogleMapComponent = ({
   })
 
   const [map, setMap] = useState<google.maps.Map | null>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [currentPath, setCurrentPath] = useState<google.maps.LatLngLiteral[]>([])
   const [locationError, setLocationError] = useState<string | null>(null)
 
   // Pins mode state
@@ -58,23 +49,6 @@ const GoogleMapComponent = ({
   const [pinsPrompt, setPinsPrompt] = useState<string>('Place a Start Pin')
   const [isPinsLoading, setIsPinsLoading] = useState(false)
   const [pinsError, setPinsError] = useState<string | null>(null)
-
-  // Reset state when measurement mode changes
-  useEffect(() => {
-    if (measurementMode === 'draw') {
-      // Clear pins state when switching to draw mode
-      setStartPin(null)
-      setEndPin(null)
-      setRoutePath(null)
-      setDistanceMeters(null)
-      setPinsPrompt('Place a Start Pin')
-      setPinsError(null)
-    } else if (measurementMode === 'pins') {
-      // Clear drawing state when switching to pins mode
-      setIsDrawing(false)
-      setCurrentPath([])
-    }
-  }, [measurementMode])
 
   const onLoad = useCallback((mapInstance: google.maps.Map) => {
     setMap(mapInstance)
@@ -183,38 +157,9 @@ const GoogleMapComponent = ({
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
     if (e.latLng) {
       const position = { lat: e.latLng.lat(), lng: e.latLng.lng() }
-
-      if (measurementMode === 'pins') {
-        // Handle pins mode
-        handlePinClick(position)
-      } else if (isDrawing) {
-        // Add point to current path
-        const newPath = [...currentPath, position]
-        setCurrentPath(newPath)
-      } else if (onLocationSelect) {
-        // Select location for marker
-        onLocationSelect(position)
-      }
+      handlePinClick(position)
     }
-  }, [measurementMode, isDrawing, currentPath, onLocationSelect, handlePinClick])
-
-  const handleStartDrawing = () => {
-    setIsDrawing(true)
-    setCurrentPath([])
-  }
-
-  const handleFinishDrawing = () => {
-    if (currentPath.length > 1 && onDrawComplete) {
-      onDrawComplete(currentPath)
-    }
-    setIsDrawing(false)
-    setCurrentPath([])
-  }
-
-  const handleCancelDrawing = () => {
-    setIsDrawing(false)
-    setCurrentPath([])
-  }
+  }, [handlePinClick])
 
   if (loadError) {
     return (
@@ -271,14 +216,6 @@ const GoogleMapComponent = ({
     clickable: false,
   }
 
-  // Polyline options for drawing
-  const drawingOptions: google.maps.PolylineOptions = {
-    strokeColor: colors.accent,
-    strokeOpacity: 0.6,
-    strokeWeight: 3,
-    clickable: false,
-  }
-
   return (
     <div>
       <GoogleMap
@@ -313,32 +250,8 @@ const GoogleMapComponent = ({
           />
         )}
 
-        {/* Current drawing path */}
-        {isDrawing && currentPath.length > 0 && (
-          <Polyline
-            path={currentPath}
-            options={drawingOptions}
-          />
-        )}
-
-        {/* Drawing points */}
-        {isDrawing && currentPath.map((point) => (
-          <Marker
-            key={`${point.lat}-${point.lng}`}
-            position={point}
-            icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 5,
-              fillColor: colors.accent,
-              fillOpacity: 1,
-              strokeColor: colors.surface,
-              strokeWeight: 1,
-            }}
-          />
-        ))}
-
         {/* Pins mode: Start pin */}
-        {measurementMode === 'pins' && startPin && (
+        {startPin && (
           <Marker
             position={startPin}
             label={{
@@ -359,7 +272,7 @@ const GoogleMapComponent = ({
         )}
 
         {/* Pins mode: End pin */}
-        {measurementMode === 'pins' && endPin && (
+        {endPin && (
           <Marker
             position={endPin}
             label={{
@@ -380,7 +293,7 @@ const GoogleMapComponent = ({
         )}
 
         {/* Pins mode: Route polyline */}
-        {measurementMode === 'pins' && routePath && (
+        {routePath && (
           <Polyline
             path={routePath}
             options={{
@@ -393,160 +306,84 @@ const GoogleMapComponent = ({
         )}
       </GoogleMap>
 
-      {/* Drawing controls */}
-      {onDrawComplete && measurementMode === 'draw' && (
-        <>
-          {locationError && (
-            <div style={{
-              marginTop: '12px',
-              padding: '12px',
-              backgroundColor: colors.warning,
-              color: colors.textPrimary,
-              borderRadius: '8px',
-              fontSize: '14px',
-              marginBottom: '8px',
-            }}>
-              {locationError}
-            </div>
-          )}
+      {/* Pins measurement controls */}
+      <div>
+        {/* Prompt */}
+        {pinsPrompt && (
           <div style={{
             marginTop: '12px',
-            display: 'flex',
-            gap: '8px',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
+            padding: '12px',
+            backgroundColor: colors.primary,
+            color: colors.textLight,
+            borderRadius: '8px',
+            fontSize: '14px',
+            textAlign: 'center',
+            fontWeight: 600,
           }}>
-            {/* GPS Center Button */}
-            <button
-              onClick={handleCenterToGPS}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: colors.neutral,
-                color: colors.textLight,
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '14px',
-              }}
-              title="Center map on your current location"
-            >
-              📍 Center to GPS
-            </button>
-
-            {isDrawing ? (
-              <>
-                <button
-                  onClick={handleFinishDrawing}
-                  disabled={currentPath.length < 2}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: currentPath.length < 2 ? colors.neutralLight : colors.success,
-                    color: colors.textLight,
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: currentPath.length < 2 ? 'not-allowed' : 'pointer',
-                    fontWeight: 600,
-                    opacity: currentPath.length < 2 ? 0.5 : 1,
-                  }}
-                >
-                  Finish Drawing ({currentPath.length} points)
-                </button>
-                <button
-                  onClick={handleCancelDrawing}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: colors.neutral,
-                    color: colors.textLight,
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                  }}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={handleStartDrawing}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: colors.primary,
-                  color: colors.textLight,
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                Draw Work Zone
-              </button>
-            )}
+            {isPinsLoading ? 'Processing...' : pinsPrompt}
           </div>
-        </>
-      )}
+        )}
 
-      {/* Pins mode controls */}
-      {measurementMode === 'pins' && (
-        <>
-          {/* Prompt */}
-          {pinsPrompt && (
-            <div style={{
-              marginTop: '12px',
-              padding: '12px',
-              backgroundColor: colors.primary,
+        {/* Error message */}
+        {pinsError && (
+          <div style={{
+            marginTop: '12px',
+            padding: '12px',
+            backgroundColor: colors.error,
+            color: colors.textLight,
+            borderRadius: '8px',
+            fontSize: '14px',
+          }}>
+            {pinsError}
+          </div>
+        )}
+
+        {/* Distance display */}
+        {distanceMeters !== null && (
+          <div style={{
+            marginTop: '12px',
+            padding: '16px',
+            backgroundColor: colors.success,
+            color: colors.textLight,
+            borderRadius: '8px',
+            fontSize: '16px',
+            textAlign: 'center',
+            fontWeight: 700,
+          }}>
+            Distance: {formatDistance(distanceMeters)}
+          </div>
+        )}
+
+        {/* Controls */}
+        <div style={{
+          marginTop: '12px',
+          display: 'flex',
+          gap: '8px',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+        }}>
+          {/* GPS Center Button */}
+          <button
+            onClick={handleCenterToGPS}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: colors.neutral,
               color: colors.textLight,
+              border: 'none',
               borderRadius: '8px',
-              fontSize: '14px',
-              textAlign: 'center',
+              cursor: 'pointer',
               fontWeight: 600,
-            }}>
-              {isPinsLoading ? 'Processing...' : pinsPrompt}
-            </div>
-          )}
-
-          {/* Error message */}
-          {pinsError && (
-            <div style={{
-              marginTop: '12px',
-              padding: '12px',
-              backgroundColor: colors.error,
-              color: colors.textLight,
-              borderRadius: '8px',
               fontSize: '14px',
-            }}>
-              {pinsError}
-            </div>
-          )}
+            }}
+            title="Center map on your current location"
+          >
+            📍 Center to GPS
+          </button>
 
-          {/* Distance display */}
-          {distanceMeters !== null && (
-            <div style={{
-              marginTop: '12px',
-              padding: '16px',
-              backgroundColor: colors.success,
-              color: colors.textLight,
-              borderRadius: '8px',
-              fontSize: '16px',
-              textAlign: 'center',
-              fontWeight: 700,
-            }}>
-              Distance: {formatDistance(distanceMeters)}
-            </div>
-          )}
-
-          {/* Controls */}
-          <div style={{
-            marginTop: '12px',
-            display: 'flex',
-            gap: '8px',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
-          }}>
-            {/* GPS Center Button */}
+          {/* Clear button */}
+          {(startPin || endPin) && (
             <button
-              onClick={handleCenterToGPS}
+              onClick={handleClearPins}
               style={{
                 padding: '8px 16px',
                 backgroundColor: colors.neutral,
@@ -555,46 +392,26 @@ const GoogleMapComponent = ({
                 borderRadius: '8px',
                 cursor: 'pointer',
                 fontWeight: 600,
-                fontSize: '14px',
               }}
-              title="Center map on your current location"
             >
-              📍 Center to GPS
+              Clear
             </button>
-
-            {/* Clear button */}
-            {(startPin || endPin) && (
-              <button
-                onClick={handleClearPins}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: colors.neutral,
-                  color: colors.textLight,
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          {locationError && (
-            <div style={{
-              marginTop: '12px',
-              padding: '12px',
-              backgroundColor: colors.warning,
-              color: colors.textPrimary,
-              borderRadius: '8px',
-              fontSize: '14px',
-            }}>
-              {locationError}
-            </div>
           )}
-        </>
-      )}
+        </div>
+
+        {locationError && (
+          <div style={{
+            marginTop: '12px',
+            padding: '12px',
+            backgroundColor: colors.warning,
+            color: colors.textPrimary,
+            borderRadius: '8px',
+            fontSize: '14px',
+          }}>
+            {locationError}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

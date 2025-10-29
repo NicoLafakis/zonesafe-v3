@@ -3,8 +3,7 @@ import { Info, Loader } from 'lucide-react'
 import { usePlanWizard } from '../../contexts/PlanWizardContext'
 import { colors, spacing, typography, borderRadius, shadows } from '../../styles/theme'
 import GoogleMapComponent from '../GoogleMapComponent'
-import { MeasurementToolSelector, type MeasurementMode } from '../MeasurementToolSelector'
-import { geocodeAddress, getRoadData, calculatePathLength, reverseGeocode, type LatLng } from '../../services/roadsAPI'
+import { geocodeAddress, getRoadData, reverseGeocode, type LatLng } from '../../services/roadsAPI'
 
 interface Step1LocationProps {
   onNext: () => void
@@ -13,12 +12,11 @@ interface Step1LocationProps {
 
 const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
   const { planData, updateRoadData } = usePlanWizard()
-  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.0060 }) // Default to NYC
+  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.006 }) // Default to NYC
   const [workZonePath, setWorkZonePath] = useState<google.maps.LatLngLiteral[]>([])
   const [loadingRoadData, setLoadingRoadData] = useState(false)
   const [searchAddress, setSearchAddress] = useState('')
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('draw')
 
   // Initialize map with existing data if editing
   useEffect(() => {
@@ -49,43 +47,6 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
     }
 
     setLoadingRoadData(false)
-  }
-
-  const handleDrawComplete = async (path: google.maps.LatLngLiteral[]) => {
-    setWorkZonePath(path)
-    setLoadingRoadData(true)
-
-    try {
-      // Get start and end addresses
-      const startAddress = await reverseGeocode(path[0].lat, path[0].lng)
-      const endAddress = await reverseGeocode(path[path.length - 1].lat, path[path.length - 1].lng)
-
-      // Get road data from start point
-      const roadData = await getRoadData(path[0].lat, path[0].lng)
-
-      // Calculate work zone length from path
-      const workZoneLengthFeet = calculatePathLength(path)
-
-      if (roadData) {
-        updateRoadData({
-          roadName: roadData.roadName,
-          startAddress: startAddress || 'Unknown',
-          endAddress: endAddress || 'Unknown',
-          speedLimit: roadData.speedLimit,
-          laneCount: roadData.laneCount,
-          laneCountSource: roadData.laneCountSource,
-          laneCountConfidence: roadData.confidence,
-          userModified: false,
-          direction: 'bidirectional',
-          selectedLanes: [],
-          workZoneLengthFeet,
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching road data:', error)
-    } finally {
-      setLoadingRoadData(false)
-    }
   }
 
   const handlePinsMeasurementComplete = async (data: {
@@ -240,34 +201,6 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
         )}
       </div>
 
-      {/* Measurement Tool Selector */}
-      <div
-        style={{
-          backgroundColor: colors.surface,
-          borderRadius: borderRadius.lg,
-          padding: spacing.lg,
-          marginBottom: spacing.lg,
-          boxShadow: shadows.sm,
-        }}
-      >
-        <label
-          style={{
-            display: 'block',
-            fontSize: typography.fontSize.sm,
-            fontWeight: typography.fontWeight.semibold,
-            color: colors.textPrimary,
-            marginBottom: spacing.sm,
-          }}
-        >
-          Measurement Tool
-        </label>
-        <MeasurementToolSelector
-          mode={measurementMode}
-          onModeChange={setMeasurementMode}
-          disabled={loadingRoadData}
-        />
-      </div>
-
       {/* Google Maps Component */}
       <div
         style={{
@@ -281,11 +214,9 @@ const Step1Location = ({ onNext, onBack }: Step1LocationProps) => {
         <GoogleMapComponent
           center={mapCenter}
           zoom={15}
-          onDrawComplete={handleDrawComplete}
           onPinsMeasurementComplete={handlePinsMeasurementComplete}
           workZonePath={workZonePath}
           height="500px"
-          measurementMode={measurementMode}
         />
 
         {loadingRoadData && (
