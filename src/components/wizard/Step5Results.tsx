@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { usePlanWizard } from '../../contexts/PlanWizardContext'
+import { useAuth } from '../../contexts/AuthContext'
+import { plansAPI } from '../../services/api'
 import { calculateWorkZoneRequirements, WorkZoneInput } from '../../lib/mutcd-calculation-engine'
 import { colors, spacing, typography, borderRadius, shadows } from '../../styles/theme'
-import { Download, Mail, Save, Edit, FileText, Loader, CheckCircle } from 'lucide-react'
+import { Download, Mail, Save, Edit, FileText, Loader, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface Step5ResultsProps {
   onEdit: () => void
@@ -10,11 +13,16 @@ interface Step5ResultsProps {
 }
 
 const Step5Results = ({ onEdit, onStartNew }: Step5ResultsProps) => {
+  const navigate = useNavigate()
+  const { isAuthenticated } = useAuth()
   const { planData } = usePlanWizard()
   const [loading, setLoading] = useState(true)
   const [loadingStep, setLoadingStep] = useState(0)
   const [calculationResults, setCalculationResults] = useState<any>(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const loadingMessages = [
     'Analyzing road conditions...',
@@ -95,6 +103,45 @@ const Step5Results = ({ onEdit, onStartNew }: Step5ResultsProps) => {
       return duration.value <= 3 ? 'short_term' : duration.value <= 30 ? 'intermediate_term' : 'long_term'
     } else {
       return duration.value <= 2 ? 'intermediate_term' : 'long_term'
+    }
+  }
+
+  const handleSave = async () => {
+    if (!isAuthenticated) {
+      setShowSaveModal(true)
+      return
+    }
+
+    setSaving(true)
+    setSaveError(null)
+
+    try {
+      // Generate plan title
+      const title = `${planData.roadData.roadName || 'Untitled Plan'} - ${new Date().toLocaleDateString()}`
+
+      await plansAPI.create({
+        title,
+        workType: planData.workType,
+        roadData: planData.roadData,
+        workTiming: planData.workTiming,
+        workZoneDetails: planData.workZoneDetails,
+        equipment: planData.equipment,
+        mutcdCalculations: calculationResults,
+        confidenceScore: planData.roadData.userModified ? 95 : 100,
+        dataSources: {
+          speedLimit: planData.roadData.laneCountSource,
+          laneCount: planData.roadData.laneCountSource,
+        },
+      })
+
+      setSaveSuccess(true)
+      setTimeout(() => {
+        navigate('/plans')
+      }, 2000)
+    } catch (error: any) {
+      setSaveError(error.message || 'Failed to save plan')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -324,6 +371,48 @@ const Step5Results = ({ onEdit, onStartNew }: Step5ResultsProps) => {
         </div>
       )}
 
+      {/* Save Error Message */}
+      {saveError && (
+        <div
+          style={{
+            marginBottom: spacing.lg,
+            padding: spacing.md,
+            backgroundColor: '#fee2e2',
+            borderLeft: `4px solid #ef4444`,
+            borderRadius: borderRadius.sm,
+            display: 'flex',
+            alignItems: 'center',
+            gap: spacing.md,
+          }}
+        >
+          <AlertCircle size={20} color="#ef4444" />
+          <p style={{ fontSize: typography.fontSize.sm, color: '#991b1b' }}>
+            {saveError}
+          </p>
+        </div>
+      )}
+
+      {/* Save Success Message */}
+      {saveSuccess && (
+        <div
+          style={{
+            marginBottom: spacing.lg,
+            padding: spacing.md,
+            backgroundColor: '#d1fae5',
+            borderLeft: `4px solid #10b981`,
+            borderRadius: borderRadius.sm,
+            display: 'flex',
+            alignItems: 'center',
+            gap: spacing.md,
+          }}
+        >
+          <CheckCircle size={20} color="#10b981" />
+          <p style={{ fontSize: typography.fontSize.sm, color: '#065f46' }}>
+            Plan saved successfully! Redirecting to My Plans...
+          </p>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div
         style={{
@@ -351,9 +440,10 @@ const Step5Results = ({ onEdit, onStartNew }: Step5ResultsProps) => {
           onClick={() => alert('Email Plan - Coming Soon')}
         />
         <ActionButton
-          icon={<Save size={20} />}
-          label="Save Plan"
-          onClick={() => setShowSaveModal(true)}
+          icon={saving ? <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={20} />}
+          label={saving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save Plan'}
+          onClick={handleSave}
+          disabled={saving || saveSuccess}
         />
       </div>
 
@@ -460,14 +550,17 @@ const ActionButton = ({
   label,
   onClick,
   primary = false,
+  disabled = false,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   primary?: boolean
+  disabled?: boolean
 }) => (
   <button
     onClick={onClick}
+    disabled={disabled}
     style={{
       padding: spacing.lg,
       backgroundColor: primary ? colors.primary : colors.neutral,
@@ -475,21 +568,26 @@ const ActionButton = ({
       fontSize: typography.fontSize.base,
       fontWeight: typography.fontWeight.bold,
       borderRadius: borderRadius.md,
-      cursor: 'pointer',
+      cursor: disabled ? 'not-allowed' : 'pointer',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.sm,
       boxShadow: shadows.md,
       transition: 'all 0.2s ease',
+      opacity: disabled ? 0.6 : 1,
     }}
     onMouseEnter={(e) => {
-      e.currentTarget.style.transform = 'translateY(-2px)'
-      e.currentTarget.style.boxShadow = shadows.lg
+      if (!disabled) {
+        e.currentTarget.style.transform = 'translateY(-2px)'
+        e.currentTarget.style.boxShadow = shadows.lg
+      }
     }}
     onMouseLeave={(e) => {
-      e.currentTarget.style.transform = 'translateY(0)'
-      e.currentTarget.style.boxShadow = shadows.md
+      if (!disabled) {
+        e.currentTarget.style.transform = 'translateY(0)'
+        e.currentTarget.style.boxShadow = shadows.md
+      }
     }}
   >
     {icon}
