@@ -1,7 +1,9 @@
-import { useState } from 'react'
-import { MapPin, Info } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Info, Loader } from 'lucide-react'
 import { usePlanWizard } from '../../contexts/PlanWizardContext'
 import { colors, spacing, typography, borderRadius, shadows } from '../../styles/theme'
+import GoogleMapComponent from '../GoogleMapComponent'
+import { geocodeAddress, getRoadData, calculatePathLength, reverseGeocode } from '../../services/roadsAPI'
 
 interface Step1LocationProps {
   onNext: () => void
@@ -9,25 +11,78 @@ interface Step1LocationProps {
 
 const Step1Location = ({ onNext }: Step1LocationProps) => {
   const { planData, updateRoadData } = usePlanWizard()
-  const [hasDrawnLine, setHasDrawnLine] = useState(false)
+  const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.0060 }) // Default to NYC
+  const [workZonePath, setWorkZonePath] = useState<google.maps.LatLngLiteral[]>([])
+  const [loadingRoadData, setLoadingRoadData] = useState(false)
+  const [searchAddress, setSearchAddress] = useState('')
+  const [searchError, setSearchError] = useState<string | null>(null)
 
-  // Simulate drawing a line on the map (mock functionality)
-  const handleSimulateMapDrawing = () => {
-    setHasDrawnLine(true)
-    // Simulate API data retrieval
-    updateRoadData({
-      roadName: 'Main Street',
-      startAddress: '100 Main St',
-      endAddress: '500 Main St',
-      speedLimit: 35,
-      laneCount: 2,
-      laneCountSource: 'google',
-      laneCountConfidence: 100,
-      userModified: false,
-      direction: 'bidirectional',
-      selectedLanes: [],
-      workZoneLengthFeet: 400,
-    })
+  // Initialize map with existing data if editing
+  useEffect(() => {
+    if (planData.roadData.startAddress) {
+      geocodeAddress(planData.roadData.startAddress).then((location) => {
+        if (location) {
+          setMapCenter({ lat: location.latitude, lng: location.longitude })
+        }
+      })
+    }
+  }, [])
+
+  const handleSearchAddress = async () => {
+    if (!searchAddress.trim()) {
+      setSearchError('Please enter an address')
+      return
+    }
+
+    setLoadingRoadData(true)
+    setSearchError(null)
+
+    const location = await geocodeAddress(searchAddress)
+    if (location) {
+      setMapCenter({ lat: location.latitude, lng: location.longitude })
+      setSearchError(null)
+    } else {
+      setSearchError('Address not found. Please try again.')
+    }
+
+    setLoadingRoadData(false)
+  }
+
+  const handleDrawComplete = async (path: google.maps.LatLngLiteral[]) => {
+    setWorkZonePath(path)
+    setLoadingRoadData(true)
+
+    try {
+      // Get start and end addresses
+      const startAddress = await reverseGeocode(path[0].lat, path[0].lng)
+      const endAddress = await reverseGeocode(path[path.length - 1].lat, path[path.length - 1].lng)
+
+      // Get road data from start point
+      const roadData = await getRoadData(path[0].lat, path[0].lng)
+
+      // Calculate work zone length from path
+      const workZoneLengthFeet = calculatePathLength(path)
+
+      if (roadData) {
+        updateRoadData({
+          roadName: roadData.roadName,
+          startAddress: startAddress || 'Unknown',
+          endAddress: endAddress || 'Unknown',
+          speedLimit: roadData.speedLimit,
+          laneCount: roadData.laneCount,
+          laneCountSource: roadData.laneCountSource,
+          laneCountConfidence: roadData.confidence,
+          userModified: false,
+          direction: 'bidirectional',
+          selectedLanes: [],
+          workZoneLengthFeet,
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching road data:', error)
+    } finally {
+      setLoadingRoadData(false)
+    }
   }
 
   const handleFieldChange = (field: string, value: any) => {
@@ -50,6 +105,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
     })
   }
 
+  const hasDrawnLine = workZonePath.length > 1 || (planData.roadData.roadName && planData.roadData.roadName !== '')
   const canProceed = hasDrawnLine &&
     planData.roadData.selectedLanes &&
     planData.roadData.selectedLanes.length > 0
@@ -73,70 +129,115 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           marginBottom: spacing.xl,
         }}
       >
-        Draw a line on the map to indicate your work zone location.
+        Search for a location or draw a line on the map to indicate your work zone.
       </p>
 
-      {/* Map Placeholder */}
+      {/* Address Search */}
       <div
         style={{
           backgroundColor: colors.surface,
           borderRadius: borderRadius.lg,
-          padding: spacing.xl,
-          marginBottom: spacing.xl,
-          boxShadow: shadows.md,
-          minHeight: '400px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: `2px dashed ${colors.neutralLight}`,
+          padding: spacing.lg,
+          marginBottom: spacing.lg,
+          boxShadow: shadows.sm,
         }}
       >
-        <MapPin size={64} color={colors.neutral} style={{ marginBottom: spacing.lg }} />
-        <h3
+        <label
           style={{
-            fontSize: typography.fontSize.xl,
+            display: 'block',
+            fontSize: typography.fontSize.sm,
             fontWeight: typography.fontWeight.semibold,
             color: colors.textPrimary,
-            marginBottom: spacing.md,
+            marginBottom: spacing.sm,
           }}
         >
-          Interactive Map (Coming Soon)
-        </h3>
-        <p
-          style={{
-            fontSize: typography.fontSize.base,
-            color: colors.textSecondary,
-            marginBottom: spacing.lg,
-            textAlign: 'center',
-            maxWidth: '400px',
-          }}
-        >
-          In production, you'll draw a line segment to mark your work zone. For now, click below to
-          simulate.
-        </p>
-        {!hasDrawnLine && (
-          <button
-            onClick={handleSimulateMapDrawing}
+          Search Location
+        </label>
+        <div style={{ display: 'flex', gap: spacing.md }}>
+          <input
+            type="text"
+            placeholder="Enter address or intersection..."
+            value={searchAddress}
+            onChange={(e) => setSearchAddress(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSearchAddress()}
             style={{
-              padding: `${spacing.md} ${spacing.xl}`,
-              backgroundColor: colors.primary,
+              flex: 1,
+              padding: spacing.md,
+              fontSize: typography.fontSize.base,
+              border: `1px solid ${colors.neutralLight}`,
+              borderRadius: borderRadius.md,
+              backgroundColor: colors.surface,
+            }}
+          />
+          <button
+            onClick={handleSearchAddress}
+            disabled={loadingRoadData}
+            style={{
+              padding: `${spacing.md} ${spacing.lg}`,
+              backgroundColor: loadingRoadData ? colors.neutralLight : colors.primary,
               color: colors.textLight,
               fontSize: typography.fontSize.base,
-              fontWeight: typography.fontWeight.bold,
+              fontWeight: typography.fontWeight.semibold,
+              border: 'none',
               borderRadius: borderRadius.md,
-              cursor: 'pointer',
-              boxShadow: shadows.md,
+              cursor: loadingRoadData ? 'not-allowed' : 'pointer',
+              minWidth: '100px',
             }}
           >
-            Simulate Map Drawing
+            {loadingRoadData ? 'Loading...' : 'Search'}
           </button>
+        </div>
+        {searchError && (
+          <p style={{ color: colors.error, fontSize: typography.fontSize.sm, marginTop: spacing.sm }}>
+            {searchError}
+          </p>
         )}
-        {hasDrawnLine && (
+      </div>
+
+      {/* Google Maps Component */}
+      <div
+        style={{
+          backgroundColor: colors.surface,
+          borderRadius: borderRadius.lg,
+          padding: spacing.md,
+          marginBottom: spacing.xl,
+          boxShadow: shadows.md,
+        }}
+      >
+        <GoogleMapComponent
+          center={mapCenter}
+          zoom={15}
+          onDrawComplete={handleDrawComplete}
+          workZonePath={workZonePath}
+          height="500px"
+        />
+
+        {loadingRoadData && (
           <div
             style={{
-              padding: spacing.lg,
+              marginTop: spacing.md,
+              padding: spacing.md,
               backgroundColor: colors.accent,
+              borderRadius: borderRadius.md,
+              display: 'flex',
+              alignItems: 'center',
+              gap: spacing.md,
+            }}
+          >
+            <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontWeight: typography.fontWeight.semibold }}>
+              Fetching road data...
+            </span>
+          </div>
+        )}
+
+        {hasDrawnLine && !loadingRoadData && (
+          <div
+            style={{
+              marginTop: spacing.md,
+              padding: spacing.md,
+              backgroundColor: colors.success,
+              color: colors.textLight,
               borderRadius: borderRadius.md,
               display: 'flex',
               alignItems: 'center',
@@ -145,7 +246,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           >
             <Info size={20} />
             <span style={{ fontWeight: typography.fontWeight.semibold }}>
-              Line drawn! Road data loaded below.
+              Work zone drawn! Road data loaded below.
             </span>
           </div>
         )}
@@ -288,7 +389,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                 Speed Limit (mph)
                 <ConfidenceBadge
                   source={planData.roadData.laneCountSource || 'google'}
-                  confidence={100}
+                  confidence={planData.roadData.laneCountConfidence || 100}
                 />
               </label>
               <input
@@ -315,7 +416,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                   marginBottom: spacing.sm,
                 }}
               >
-                Lane Count
+                Total Lanes
                 <ConfidenceBadge
                   source={planData.roadData.laneCountSource || 'google'}
                   confidence={planData.roadData.laneCountConfidence || 100}
@@ -325,8 +426,6 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                 type="number"
                 value={planData.roadData.laneCount || ''}
                 onChange={(e) => handleFieldChange('laneCount', parseInt(e.target.value))}
-                min={1}
-                max={8}
                 style={{
                   width: '100%',
                   padding: spacing.md,
@@ -339,8 +438,8 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
             </div>
           </div>
 
-          {/* Lane Selection */}
-          <div>
+          {/* Lane Selector */}
+          <div style={{ marginBottom: spacing.lg }}>
             <label
               style={{
                 display: 'block',
@@ -350,44 +449,29 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
                 marginBottom: spacing.sm,
               }}
             >
-              Select Closed Lanes
+              Select Lanes to Close
             </label>
-            <p
-              style={{
-                fontSize: typography.fontSize.sm,
-                color: colors.textSecondary,
-                marginBottom: spacing.md,
-              }}
-            >
-              Click on lanes to mark them as closed (orange = closed, white = open)
+            <p style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, marginBottom: spacing.md }}>
+              Click on lanes to toggle closure (at least one lane must be closed)
             </p>
-            <div
-              style={{
-                display: 'flex',
-                gap: spacing.md,
-                flexWrap: 'wrap',
-              }}
-            >
-              {Array.from({ length: planData.roadData.laneCount || 0 }, (_, i) => {
+            <div style={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+              {Array.from({ length: planData.roadData.laneCount || 2 }, (_, i) => {
                 const isSelected = planData.roadData.selectedLanes?.includes(i) || false
                 return (
                   <button
                     key={i}
                     onClick={() => handleLaneToggle(i)}
                     style={{
-                      width: '80px',
-                      height: '120px',
-                      border: `2px solid ${isSelected ? colors.primary : colors.neutralLight}`,
-                      borderRadius: borderRadius.md,
-                      backgroundColor: isSelected ? colors.primary : colors.surface,
+                      padding: `${spacing.md} ${spacing.lg}`,
+                      backgroundColor: isSelected ? colors.error : colors.surface,
                       color: isSelected ? colors.textLight : colors.textPrimary,
+                      border: `2px solid ${isSelected ? colors.error : colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                      cursor: 'pointer',
                       fontSize: typography.fontSize.base,
                       fontWeight: typography.fontWeight.semibold,
-                      cursor: 'pointer',
+                      minWidth: '80px',
                       transition: 'all 0.2s ease',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
                     }}
                   >
                     Lane {i + 1}
@@ -396,17 +480,42 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
               })}
             </div>
           </div>
+
+          {/* Work Zone Length */}
+          <div style={{ marginBottom: spacing.lg }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: typography.fontSize.base,
+                fontWeight: typography.fontWeight.semibold,
+                color: colors.textPrimary,
+                marginBottom: spacing.sm,
+              }}
+            >
+              Work Zone Length (feet)
+            </label>
+            <p style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, marginBottom: spacing.sm }}>
+              Auto-calculated from drawn line: {planData.roadData.workZoneLengthFeet || 0} feet
+            </p>
+            <input
+              type="number"
+              value={planData.roadData.workZoneLengthFeet || ''}
+              onChange={(e) => handleFieldChange('workZoneLengthFeet', parseInt(e.target.value))}
+              style={{
+                width: '100%',
+                padding: spacing.md,
+                fontSize: typography.fontSize.base,
+                border: `1px solid ${colors.neutralLight}`,
+                borderRadius: borderRadius.md,
+                backgroundColor: colors.surface,
+              }}
+            />
+          </div>
         </div>
       )}
 
-      {/* Navigation Buttons */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          marginTop: spacing.xl,
-        }}
-      >
+      {/* Next Button */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           onClick={onNext}
           disabled={!canProceed}
@@ -416,44 +525,46 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
             color: colors.textLight,
             fontSize: typography.fontSize.base,
             fontWeight: typography.fontWeight.bold,
+            border: 'none',
             borderRadius: borderRadius.md,
             cursor: canProceed ? 'pointer' : 'not-allowed',
+            opacity: canProceed ? 1 : 0.5,
             boxShadow: canProceed ? shadows.md : 'none',
-            opacity: canProceed ? 1 : 0.6,
           }}
         >
-          Next: Work Timing →
+          Next: Work Timing
         </button>
       </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
 
 // Confidence Badge Component
-const ConfidenceBadge = ({
-  source,
-  confidence,
-}: {
+interface ConfidenceBadgeProps {
   source: string
   confidence: number
-}) => {
-  const getSourceLabel = (src: string) => {
-    switch (src) {
-      case 'google':
-        return 'Google Roads'
-      case 'here':
-        return 'HERE Maps'
-      case 'osm':
-        return 'OpenStreetMap'
-      case 'ai-gov':
-        return 'AI + Gov Data'
-      case 'ai-web':
-        return 'AI + Web'
-      case 'user':
-        return 'User Verified'
-      default:
-        return 'Unknown'
+}
+
+const ConfidenceBadge = ({ source, confidence }: ConfidenceBadgeProps) => {
+  const getSourceLabel = (source: string) => {
+    const labels: Record<string, string> = {
+      google: 'Google',
+      here: 'HERE Maps',
+      osm: 'OpenStreetMap',
+      'ai-gov': 'AI (Gov Data)',
+      'ai-web': 'AI (Web)',
+      user: 'User Input',
+      default: 'Default',
     }
+    return labels[source] || source
+  }
+
+  const getConfidenceColor = (confidence: number) => {
+    if (confidence >= 90) return colors.success
+    if (confidence >= 70) return colors.accent
+    return colors.warning
   }
 
   return (
@@ -461,10 +572,10 @@ const ConfidenceBadge = ({
       style={{
         marginLeft: spacing.sm,
         padding: `${spacing.xs} ${spacing.sm}`,
-        fontSize: typography.fontSize.xs,
-        backgroundColor: confidence >= 95 ? colors.accent : '#fbbf24',
-        color: colors.textPrimary,
+        backgroundColor: getConfidenceColor(confidence),
+        color: confidence >= 90 ? colors.textLight : colors.textPrimary,
         borderRadius: borderRadius.sm,
+        fontSize: typography.fontSize.xs,
         fontWeight: typography.fontWeight.semibold,
       }}
     >
