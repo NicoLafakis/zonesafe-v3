@@ -654,33 +654,35 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
             Road Information
           </h3>
 
-          {/* Road Name */}
-          <div style={{ marginBottom: spacing.lg }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: typography.fontSize.base,
-                fontWeight: typography.fontWeight.semibold,
-                color: colors.textPrimary,
-                marginBottom: spacing.sm,
-              }}
-            >
-              Road Name
-            </label>
-            <input
-              type="text"
-              value={planData.roadData.roadName || ''}
-              onChange={(e) => handleFieldChange('roadName', e.target.value)}
-              style={{
-                width: '100%',
-                padding: spacing.md,
-                fontSize: typography.fontSize.base,
-                border: `1px solid ${colors.neutralLight}`,
-                borderRadius: borderRadius.md,
-                backgroundColor: colors.surface,
-              }}
-            />
-          </div>
+          {/* Road Name - Only show if we have a valid road name */}
+          {planData.roadData.roadName && planData.roadData.roadName !== 'Unknown Road' && (
+            <div style={{ marginBottom: spacing.lg }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: typography.fontSize.base,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.textPrimary,
+                  marginBottom: spacing.sm,
+                }}
+              >
+                Road Name
+              </label>
+              <input
+                type="text"
+                value={planData.roadData.roadName || ''}
+                onChange={(e) => handleFieldChange('roadName', e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: spacing.md,
+                  fontSize: typography.fontSize.base,
+                  border: `1px solid ${colors.neutralLight}`,
+                  borderRadius: borderRadius.md,
+                  backgroundColor: colors.surface,
+                }}
+              />
+            </div>
+          )}
 
           {/* Start and End Addresses */}
           <div

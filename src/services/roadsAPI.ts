@@ -67,28 +67,55 @@ export const getRoadData = async (latitude: number, longitude: number): Promise<
     )
 
     if (!snapResponse.ok) {
-      throw new Error('Road snap failed')
+      console.warn('Road snap failed, using reverse geocoding fallback')
+      return getRoadDataFromGeocode(latitude, longitude)
     }
 
     const snapData = await snapResponse.json()
 
     if (!snapData.snappedPoints || snapData.snappedPoints.length === 0) {
-      return getDefaultRoadData()
+      console.warn('No snapped points, using reverse geocoding fallback')
+      return getRoadDataFromGeocode(latitude, longitude)
     }
 
     const snappedPoint = snapData.snappedPoints[0]
     const placeId = snappedPoint.placeId
 
+    if (!placeId) {
+      console.warn('No place ID, using reverse geocoding fallback')
+      return getRoadDataFromGeocode(latitude, longitude)
+    }
+
     // Get place details including road name
     const placeResponse = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,types&key=${GOOGLE_ROADS_API_KEY}`
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,types,address_components&key=${GOOGLE_ROADS_API_KEY}`
     )
 
     if (!placeResponse.ok) {
-      return getDefaultRoadData()
+      return getRoadDataFromGeocode(latitude, longitude)
     }
 
     const placeData = await placeResponse.json()
+
+    if (placeData.status !== 'OK') {
+      return getRoadDataFromGeocode(latitude, longitude)
+    }
+
+    // Extract road name from place data or address components
+    let roadName = ''
+    
+    if (placeData.result?.name && !placeData.result.name.includes('+')) {
+      // Use the place name if it looks like a road name (not coordinates)
+      roadName = placeData.result.name
+    } else if (placeData.result?.address_components) {
+      // Try to extract from address components
+      const routeComponent = placeData.result.address_components.find(
+        (comp: any) => comp.types.includes('route')
+      )
+      if (routeComponent) {
+        roadName = routeComponent.long_name
+      }
+    }
 
     // Estimate lane count based on road type
     const roadTypes = placeData.result?.types || []
@@ -102,12 +129,59 @@ export const getRoadData = async (latitude: number, longitude: number): Promise<
       speedLimitSource: 'default',
       laneCount,
       laneCountSource: 'ai-gov',
-      roadName: placeData.result?.name || 'Unknown Road',
+      roadName: roadName || '', // Return empty string if no road name found
       roadType: roadTypes[0] || 'street',
-      confidence: 75,
+      confidence: roadName ? 85 : 60,
     }
   } catch (error) {
     console.error('Road data fetch error:', error)
+    return getRoadDataFromGeocode(latitude, longitude)
+  }
+}
+
+/**
+ * Fallback: Get road name from reverse geocoding
+ */
+const getRoadDataFromGeocode = async (latitude: number, longitude: number): Promise<RoadData | null> => {
+  try {
+    const response = await fetch(
+      `${GOOGLE_GEOCODING_API_URL}?latlng=${latitude},${longitude}&key=${GOOGLE_ROADS_API_KEY}`
+    )
+
+    if (!response.ok) {
+      return getDefaultRoadData()
+    }
+
+    const data = await response.json()
+
+    if (data.status !== 'OK' || !data.results || data.results.length === 0) {
+      return getDefaultRoadData()
+    }
+
+    // Look for the route in address components
+    let roadName = ''
+    const result = data.results[0]
+    
+    if (result.address_components) {
+      const routeComponent = result.address_components.find(
+        (comp: any) => comp.types.includes('route')
+      )
+      if (routeComponent) {
+        roadName = routeComponent.long_name
+      }
+    }
+
+    return {
+      speedLimit: 35,
+      speedLimitSource: 'default',
+      laneCount: 2,
+      laneCountSource: 'user',
+      roadName: roadName || '', // Return empty string if no road name
+      roadType: 'street',
+      confidence: roadName ? 70 : 50,
+    }
+  } catch (error) {
+    console.error('Reverse geocoding error:', error)
     return getDefaultRoadData()
   }
 }
@@ -190,7 +264,7 @@ function getDefaultRoadData(): RoadData {
     speedLimitSource: 'default',
     laneCount: 2,
     laneCountSource: 'user',
-    roadName: 'Unknown Road',
+    roadName: '', // Empty string - will be hidden in UI
     roadType: 'street',
     confidence: 50,
   }

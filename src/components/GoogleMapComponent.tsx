@@ -33,10 +33,14 @@ const GoogleMapComponent = ({
     libraries,
   })
 
-  const [, setMap] = useState<google.maps.Map | null>(null)
+  const [map, setMap] = useState<google.maps.Map | null>(null)
+  const [mapCenter, setMapCenter] = useState(center)
   const [localStartPin, setLocalStartPin] = useState<google.maps.LatLngLiteral | undefined>(startPin)
   const [localEndPin, setLocalEndPin] = useState<google.maps.LatLngLiteral | undefined>(endPin)
   const [isPlacingPin, setIsPlacingPin] = useState(false)
+  const [isDraggingStart, setIsDraggingStart] = useState(false)
+  const [isDraggingEnd, setIsDraggingEnd] = useState(false)
+  const [locatingUser, setLocatingUser] = useState(false)
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map)
@@ -46,36 +50,48 @@ const GoogleMapComponent = ({
     setMap(null)
   }, [])
 
+  // Center map to user's GPS location
+  const handleCenterToUser = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser')
+      return
+    }
+
+    setLocatingUser(true)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }
+        setMapCenter(userLocation)
+        if (map) {
+          map.panTo(userLocation)
+          map.setZoom(16)
+        }
+        setLocatingUser(false)
+      },
+      (error) => {
+        console.error('Error getting location:', error)
+        alert('Unable to get your location. Please check your browser permissions.')
+        setLocatingUser(false)
+      }
+    )
+  }
+
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
-    if (e.latLng && isPlacingPin) {
+    if (e.latLng && isPlacingPin && !isDraggingStart && !isDraggingEnd) {
       const position = { lat: e.latLng.lat(), lng: e.latLng.lng() }
 
       if (!localStartPin) {
         // Place start pin
         setLocalStartPin(position)
-        
-        // If single pin mode, notify parent immediately
-        if (pinMode === 'single' && onPinsPlaced) {
-          onPinsPlaced({ start: position })
-          setIsPlacingPin(false)
-        }
       } else if (pinMode === 'dual' && !localEndPin) {
-        // Place end pin
+        // Place end pin (dual mode only)
         setLocalEndPin(position)
-        
-        // Notify parent with both pins
-        if (onPinsPlaced) {
-          onPinsPlaced({ start: localStartPin, end: position })
-        }
-        setIsPlacingPin(false)
-      }
-      
-      // Legacy single location select support
-      if (onLocationSelect && pinMode === 'single') {
-        onLocationSelect(position)
       }
     }
-  }, [isPlacingPin, localStartPin, localEndPin, pinMode, onPinsPlaced, onLocationSelect])
+  }, [isPlacingPin, localStartPin, localEndPin, pinMode, isDraggingStart, isDraggingEnd])
 
   const handleStartPlacingPins = () => {
     setIsPlacingPin(true)
@@ -86,7 +102,6 @@ const GoogleMapComponent = ({
   const handleClearPins = () => {
     setLocalStartPin(undefined)
     setLocalEndPin(undefined)
-    setIsPlacingPin(false)
   }
 
   const handleConfirmPins = () => {
@@ -97,6 +112,24 @@ const GoogleMapComponent = ({
       })
       setIsPlacingPin(false)
     }
+  }
+
+  // Handle marker drag for start pin
+  const handleStartPinDrag = (e: google.maps.MapMouseEvent) => {
+    if (e.latLng) {
+      setLocalStartPin({ lat: e.latLng.lat(), lng: e.latLng.lng() })
+    }
+    // Reset dragging state after a short delay
+    setTimeout(() => setIsDraggingStart(false), 100)
+  }
+
+  // Handle marker drag for end pin
+  const handleEndPinDrag = (e: google.maps.MapMouseEvent) => {
+    if (e.latLng) {
+      setLocalEndPin({ lat: e.latLng.lat(), lng: e.latLng.lng() })
+    }
+    // Reset dragging state after a short delay
+    setTimeout(() => setIsDraggingEnd(false), 100)
   }
 
   // Calculate distance between pins for display
@@ -173,20 +206,21 @@ const GoogleMapComponent = ({
     <div>
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        center={center}
+        center={mapCenter}
         zoom={zoom}
         onLoad={onLoad}
         onUnmount={onUnmount}
         onClick={handleMapClick}
-        options={{
-          ...mapOptions,
-          cursor: isPlacingPin ? 'crosshair' : 'default',
-        }}
+        options={mapOptions}
       >
         {/* Start Pin */}
         {localStartPin && (
           <Marker
             position={localStartPin}
+            draggable={isPlacingPin}
+            onDragEnd={handleStartPinDrag}
+            onDragStart={() => setIsDraggingStart(true)}
+            onDrag={() => setIsDraggingStart(true)}
             label={{
               text: pinMode === 'single' ? '📍' : 'START',
               color: colors.textLight,
@@ -208,6 +242,10 @@ const GoogleMapComponent = ({
         {pinMode === 'dual' && localEndPin && (
           <Marker
             position={localEndPin}
+            draggable={isPlacingPin}
+            onDragEnd={handleEndPinDrag}
+            onDragStart={() => setIsDraggingEnd(true)}
+            onDrag={() => setIsDraggingEnd(true)}
             label={{
               text: 'END',
               color: colors.textLight,
@@ -243,6 +281,25 @@ const GoogleMapComponent = ({
           justifyContent: 'center',
           flexWrap: 'wrap',
         }}>
+          {/* Center to User Location Button - always visible */}
+          <button
+            onClick={handleCenterToUser}
+            disabled={locatingUser}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: locatingUser ? colors.neutralLight : colors.neutral,
+              color: colors.textLight,
+              border: 'none',
+              borderRadius: '8px',
+              cursor: locatingUser ? 'not-allowed' : 'pointer',
+              fontWeight: 600,
+              fontSize: '14px',
+              opacity: locatingUser ? 0.6 : 1,
+            }}
+          >
+            {locatingUser ? '📍 Locating...' : '📍 My Location'}
+          </button>
+
           {!isPlacingPin && !pinsPlaced && (
             <button
               onClick={handleStartPlacingPins}
@@ -262,23 +319,69 @@ const GoogleMapComponent = ({
           )}
 
           {isPlacingPin && (
-            <div style={{
-              padding: '10px 16px',
-              backgroundColor: colors.accent,
-              color: colors.textPrimary,
-              borderRadius: '8px',
-              fontWeight: 600,
-              fontSize: '14px',
-            }}>
-              {!localStartPin && `Click on map to place ${pinMode === 'single' ? 'pin' : 'START pin'}`}
-              {localStartPin && !localEndPin && pinMode === 'dual' && 'Click on map to place END pin'}
-            </div>
+            <>
+              <div style={{
+                padding: '10px 16px',
+                backgroundColor: colors.accent,
+                color: colors.textPrimary,
+                borderRadius: '8px',
+                fontWeight: 600,
+                fontSize: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                {!localStartPin && `Click to place ${pinMode === 'single' ? 'pin' : 'START pin'}`}
+                {localStartPin && !localEndPin && pinMode === 'dual' && 'Click to place END pin'}
+                {((pinMode === 'single' && localStartPin) || (pinMode === 'dual' && localStartPin && localEndPin)) && 
+                  '✓ Drag pins to adjust position'}
+              </div>
+
+              {/* Clear Pins while placing */}
+              {localStartPin && (
+                <button
+                  onClick={handleClearPins}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: colors.neutral,
+                    color: colors.textLight,
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                  }}
+                >
+                  Clear Pins
+                </button>
+              )}
+
+              {/* Set Zone Position button - confirm placement */}
+              {((pinMode === 'single' && localStartPin) || (pinMode === 'dual' && localStartPin && localEndPin)) && (
+                <button
+                  onClick={handleConfirmPins}
+                  style={{
+                    padding: '10px 24px',
+                    backgroundColor: colors.success,
+                    color: colors.textLight,
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  ✓ Set Zone Position
+                </button>
+              )}
+            </>
           )}
 
-          {pinsPlaced && (
+          {pinsPlaced && !isPlacingPin && (
             <>
               <button
-                onClick={handleClearPins}
+                onClick={() => setIsPlacingPin(true)}
                 style={{
                   padding: '10px 20px',
                   backgroundColor: colors.neutral,
@@ -290,7 +393,7 @@ const GoogleMapComponent = ({
                   fontSize: '14px',
                 }}
               >
-                Clear Pins
+                Adjust Pins
               </button>
               {pinMode === 'dual' && distance > 0 && (
                 <div style={{
