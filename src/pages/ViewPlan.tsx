@@ -57,7 +57,7 @@ const ViewPlan = () => {
   }
 
   const handleEdit = () => {
-    navigate(`/plan/${planId}/edit`)
+    navigate(`/plans/${planId}/edit`)
   }
 
   const handleDelete = async () => {

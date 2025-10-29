@@ -59,6 +59,7 @@ interface PlanWizardContextValue {
   updateWorkZoneDetails: (data: Partial<WorkZoneDetails>) => void
   updateEquipment: (equipment: Equipment[]) => void
   resetPlan: () => void
+  loadPlan: (plan: PlanWizardData) => void
 }
 
 const PlanWizardContext = createContext<PlanWizardContextValue | undefined>(undefined)
@@ -106,6 +107,10 @@ export const PlanWizardProvider = ({ children }: { children: ReactNode }) => {
     setPlanData(initialPlanData)
   }
 
+  const loadPlan = (plan: PlanWizardData) => {
+    setPlanData(plan)
+  }
+
   return (
     <PlanWizardContext.Provider
       value={{
@@ -115,6 +120,7 @@ export const PlanWizardProvider = ({ children }: { children: ReactNode }) => {
         updateWorkZoneDetails,
         updateEquipment,
         resetPlan,
+        loadPlan,
       }}
     >
       {children}

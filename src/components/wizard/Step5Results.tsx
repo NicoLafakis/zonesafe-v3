@@ -10,9 +10,11 @@ import { Download, Mail, Save, Edit, FileText, Loader, CheckCircle, AlertCircle 
 interface Step5ResultsProps {
   onEdit: () => void
   onStartNew: () => void
+  editMode?: boolean
+  planId?: number
 }
 
-const Step5Results = ({ onEdit, onStartNew }: Step5ResultsProps) => {
+const Step5Results = ({ onEdit, onStartNew, editMode = false, planId }: Step5ResultsProps) => {
   const navigate = useNavigate()
   const { isAuthenticated } = useAuth()
   const { planData } = usePlanWizard()
@@ -119,25 +121,40 @@ const Step5Results = ({ onEdit, onStartNew }: Step5ResultsProps) => {
       // Generate plan title
       const title = `${planData.roadData.roadName || 'Untitled Plan'} - ${new Date().toLocaleDateString()}`
 
-      await plansAPI.create({
-        title,
-        workType: planData.workType,
-        roadData: planData.roadData,
-        workTiming: planData.workTiming,
-        workZoneDetails: planData.workZoneDetails,
-        equipment: planData.equipment,
-        mutcdCalculations: calculationResults,
-        confidenceScore: planData.roadData.userModified ? 95 : 100,
-        dataSources: {
-          speedLimit: planData.roadData.laneCountSource,
-          laneCount: planData.roadData.laneCountSource,
-        },
-      })
+      if (editMode && planId) {
+        // Update existing plan
+        await plansAPI.update(planId, {
+          title,
+          status: 'active',
+        })
 
-      setSaveSuccess(true)
-      setTimeout(() => {
-        navigate('/plans')
-      }, 2000)
+        // Navigate back to the plan view
+        setSaveSuccess(true)
+        setTimeout(() => {
+          navigate(`/plans/${planId}`)
+        }, 2000)
+      } else {
+        // Create new plan
+        await plansAPI.create({
+          title,
+          workType: planData.workType,
+          roadData: planData.roadData,
+          workTiming: planData.workTiming,
+          workZoneDetails: planData.workZoneDetails,
+          equipment: planData.equipment,
+          mutcdCalculations: calculationResults,
+          confidenceScore: planData.roadData.userModified ? 95 : 100,
+          dataSources: {
+            speedLimit: planData.roadData.laneCountSource,
+            laneCount: planData.roadData.laneCountSource,
+          },
+        })
+
+        setSaveSuccess(true)
+        setTimeout(() => {
+          navigate('/plans')
+        }, 2000)
+      }
     } catch (error: any) {
       setSaveError(error.message || 'Failed to save plan')
     } finally {
