@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Info, Loader } from 'lucide-react'
+import { Info, Loader, AlertCircle } from 'lucide-react'
 import { usePlanWizard } from '../../contexts/PlanWizardContext'
 import { colors, spacing, typography, borderRadius, shadows } from '../../styles/theme'
 import GoogleMapComponent from '../GoogleMapComponent'
-import { geocodeAddress, getRoadData, calculatePathLength, reverseGeocode } from '../../services/roadsAPI'
+import { geocodeAddress, getRoadData, reverseGeocode } from '../../services/roadsAPI'
 
 interface Step1LocationProps {
   onNext: () => void
@@ -12,14 +12,29 @@ interface Step1LocationProps {
 const Step1Location = ({ onNext }: Step1LocationProps) => {
   const { planData, updateRoadData } = usePlanWizard()
   const [mapCenter, setMapCenter] = useState({ lat: 40.7128, lng: -74.0060 }) // Default to NYC
-  const [workZonePath, setWorkZonePath] = useState<google.maps.LatLngLiteral[]>([])
   const [loadingRoadData, setLoadingRoadData] = useState(false)
   const [searchAddress, setSearchAddress] = useState('')
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [showManualFallback, setShowManualFallback] = useState(false)
+  
+  // Manual fallback fields
+  const [manualStartAddress, setManualStartAddress] = useState('')
+  const [manualEndAddress, setManualEndAddress] = useState('')
+  const [manualCrossStreet1, setManualCrossStreet1] = useState('')
+  const [manualCrossStreet2, setManualCrossStreet2] = useState('')
+  const [manualCity, setManualCity] = useState('')
+  const [manualState, setManualState] = useState('')
+  const [manualZip, setManualZip] = useState('')
+
+  // Determine pin mode based on work type
+  const pinMode = ['intersection', 'roadside_utility'].includes(planData.workType) ? 'single' : 'dual'
+  const isIntersection = planData.workType === 'intersection'
 
   // Initialize map with existing data if editing
   useEffect(() => {
-    if (planData.roadData.startAddress) {
+    if (planData.roadData.startPin) {
+      setMapCenter(planData.roadData.startPin)
+    } else if (planData.roadData.startAddress) {
       geocodeAddress(planData.roadData.startAddress).then((location) => {
         if (location) {
           setMapCenter({ lat: location.latitude, lng: location.longitude })
@@ -48,26 +63,38 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
     setLoadingRoadData(false)
   }
 
-  const handleDrawComplete = async (path: google.maps.LatLngLiteral[]) => {
-    setWorkZonePath(path)
+  const handlePinsPlaced = async (pins: { start: google.maps.LatLngLiteral; end?: google.maps.LatLngLiteral }) => {
     setLoadingRoadData(true)
+    setShowManualFallback(false)
 
     try {
-      // Get start and end addresses
-      const startAddress = await reverseGeocode(path[0].lat, path[0].lng)
-      const endAddress = await reverseGeocode(path[path.length - 1].lat, path[path.length - 1].lng)
+      // Get start address
+      const startAddress = await reverseGeocode(pins.start.lat, pins.start.lng)
+      
+      // Get end address if dual mode
+      let endAddress = ''
+      let workZoneLengthFeet = 0
+      
+      if (pins.end && pinMode === 'dual') {
+        endAddress = await reverseGeocode(pins.end.lat, pins.end.lng)
+        
+        // Calculate distance between pins
+        if (window.google?.maps?.geometry) {
+          const start = new window.google.maps.LatLng(pins.start.lat, pins.start.lng)
+          const end = new window.google.maps.LatLng(pins.end.lat, pins.end.lng)
+          const meters = window.google.maps.geometry.spherical.computeDistanceBetween(start, end)
+          workZoneLengthFeet = Math.round(meters * 3.28084)
+        }
+      }
 
       // Get road data from start point
-      const roadData = await getRoadData(path[0].lat, path[0].lng)
-
-      // Calculate work zone length from path
-      const workZoneLengthFeet = calculatePathLength(path)
+      const roadData = await getRoadData(pins.start.lat, pins.start.lng)
 
       if (roadData) {
         updateRoadData({
           roadName: roadData.roadName,
           startAddress: startAddress || 'Unknown',
-          endAddress: endAddress || 'Unknown',
+          endAddress: endAddress || startAddress || 'Unknown',
           speedLimit: roadData.speedLimit,
           laneCount: roadData.laneCount,
           laneCountSource: roadData.laneCountSource,
@@ -76,10 +103,118 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           direction: 'bidirectional',
           selectedLanes: [],
           workZoneLengthFeet,
+          startPin: pins.start,
+          endPin: pins.end,
         })
       }
     } catch (error) {
       console.error('Error fetching road data:', error)
+      setSearchError('Failed to fetch road data. Please try manual entry.')
+      setShowManualFallback(true)
+    } finally {
+      setLoadingRoadData(false)
+    }
+  }
+
+  const handleManualSubmit = async () => {
+    setLoadingRoadData(true)
+    setSearchError(null)
+
+    try {
+      if (isIntersection) {
+        // Intersection fallback: cross streets + city + state + zip
+        const intersectionAddress = `${manualCrossStreet1} and ${manualCrossStreet2}, ${manualCity}, ${manualState} ${manualZip}`
+        const location = await geocodeAddress(intersectionAddress)
+        
+        if (location) {
+          const roadData = await getRoadData(location.latitude, location.longitude)
+          
+          updateRoadData({
+            roadName: `${manualCrossStreet1} & ${manualCrossStreet2}`,
+            startAddress: intersectionAddress,
+            endAddress: intersectionAddress,
+            crossStreet: manualCrossStreet2,
+            city: manualCity,
+            state: manualState,
+            zipCode: manualZip,
+            speedLimit: roadData?.speedLimit || 25,
+            laneCount: roadData?.laneCount || 2,
+            laneCountSource: roadData?.laneCountSource || 'user',
+            laneCountConfidence: roadData?.confidence || 50,
+            userModified: true,
+            direction: 'bidirectional',
+            selectedLanes: [],
+            workZoneLengthFeet: 0,
+          })
+          setShowManualFallback(false)
+        } else {
+          setSearchError('Could not find intersection. Please verify address.')
+        }
+      } else if (pinMode === 'dual') {
+        // Linear work fallback: start + end addresses
+        const startLocation = await geocodeAddress(manualStartAddress)
+        const endLocation = await geocodeAddress(manualEndAddress)
+        
+        if (startLocation && endLocation) {
+          const roadData = await getRoadData(startLocation.latitude, startLocation.longitude)
+          
+          // Calculate distance
+          let workZoneLengthFeet = 0
+          if (window.google?.maps?.geometry) {
+            const start = new window.google.maps.LatLng(startLocation.latitude, startLocation.longitude)
+            const end = new window.google.maps.LatLng(endLocation.latitude, endLocation.longitude)
+            const meters = window.google.maps.geometry.spherical.computeDistanceBetween(start, end)
+            workZoneLengthFeet = Math.round(meters * 3.28084)
+          }
+          
+          updateRoadData({
+            roadName: roadData?.roadName || 'Unknown Road',
+            startAddress: manualStartAddress,
+            endAddress: manualEndAddress,
+            speedLimit: roadData?.speedLimit || 25,
+            laneCount: roadData?.laneCount || 2,
+            laneCountSource: roadData?.laneCountSource || 'user',
+            laneCountConfidence: roadData?.confidence || 50,
+            userModified: true,
+            direction: 'bidirectional',
+            selectedLanes: [],
+            workZoneLengthFeet,
+            startPin: { lat: startLocation.latitude, lng: startLocation.longitude },
+            endPin: { lat: endLocation.latitude, lng: endLocation.longitude },
+          })
+          setShowManualFallback(false)
+        } else {
+          setSearchError('Could not find one or both addresses. Please verify.')
+        }
+      } else {
+        // Single location fallback
+        const location = await geocodeAddress(manualStartAddress)
+        
+        if (location) {
+          const roadData = await getRoadData(location.latitude, location.longitude)
+          
+          updateRoadData({
+            roadName: roadData?.roadName || 'Unknown Road',
+            startAddress: manualStartAddress,
+            endAddress: manualStartAddress,
+            speedLimit: roadData?.speedLimit || 25,
+            laneCount: roadData?.laneCount || 2,
+            laneCountSource: roadData?.laneCountSource || 'user',
+            laneCountConfidence: roadData?.confidence || 50,
+            userModified: true,
+            direction: 'bidirectional',
+            selectedLanes: [],
+            workZoneLengthFeet: 0,
+            startPin: { lat: location.latitude, lng: location.longitude },
+          })
+          setShowManualFallback(false)
+        } else {
+          setSearchError('Could not find address. Please verify.')
+        }
+      }
+    } catch (error) {
+      console.error('Error with manual entry:', error)
+      setSearchError('Failed to process manual entry. Please try again.')
     } finally {
       setLoadingRoadData(false)
     }
@@ -105,8 +240,9 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
     })
   }
 
-  const hasDrawnLine = workZonePath.length > 1 || (planData.roadData.roadName && planData.roadData.roadName !== '')
-  const canProceed = hasDrawnLine &&
+  const hasPinsPlaced = !!(planData.roadData.startPin && (pinMode === 'single' || planData.roadData.endPin))
+  const hasRoadData = !!(planData.roadData.roadName && planData.roadData.roadName !== '')
+  const canProceed = hasRoadData &&
     planData.roadData.selectedLanes &&
     planData.roadData.selectedLanes.length > 0
 
@@ -129,7 +265,9 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           marginBottom: spacing.xl,
         }}
       >
-        Search for a location or start and end pins map to indicate your work zone.
+        {pinMode === 'single' 
+          ? 'Place a pin on the map to indicate your work location, or search for an address.'
+          : 'Place start and end pins on the map to define your work zone, or search for a location.'}
       </p>
 
       {/* Address Search */}
@@ -194,21 +332,23 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
         )}
       </div>
 
-      {/* Google Maps Component */}
+      {/* Google Maps Component with Pin Placement */}
       <div
         style={{
           backgroundColor: colors.surface,
           borderRadius: borderRadius.lg,
           padding: spacing.md,
-          marginBottom: spacing.xl,
+          marginBottom: spacing.lg,
           boxShadow: shadows.md,
         }}
       >
         <GoogleMapComponent
           center={mapCenter}
           zoom={15}
-          onDrawComplete={handleDrawComplete}
-          workZonePath={workZonePath}
+          onPinsPlaced={handlePinsPlaced}
+          pinMode={pinMode}
+          startPin={planData.roadData.startPin}
+          endPin={planData.roadData.endPin}
           height="500px"
         />
 
@@ -231,7 +371,7 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           </div>
         )}
 
-        {hasDrawnLine && !loadingRoadData && (
+        {hasPinsPlaced && !loadingRoadData && hasRoadData && (
           <div
             style={{
               marginTop: spacing.md,
@@ -246,14 +386,254 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
           >
             <Info size={20} />
             <span style={{ fontWeight: typography.fontWeight.semibold }}>
-              Work zone drawn! Road data loaded below.
+              ✓ {pinMode === 'single' ? 'Location marked' : 'Work zone marked'}! Road data loaded below.
             </span>
           </div>
         )}
       </div>
 
-      {/* Road Data Form (only shows after line is drawn) */}
-      {hasDrawnLine && (
+      {/* Manual Fallback Toggle */}
+      {!hasRoadData && (
+        <div style={{ marginBottom: spacing.lg, textAlign: 'center' }}>
+          <button
+            onClick={() => setShowManualFallback(!showManualFallback)}
+            style={{
+              padding: `${spacing.sm} ${spacing.lg}`,
+              backgroundColor: 'transparent',
+              color: colors.primary,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.semibold,
+              border: `2px solid ${colors.primary}`,
+              borderRadius: borderRadius.md,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: spacing.sm,
+              margin: '0 auto',
+            }}
+          >
+            <AlertCircle size={20} />
+            {showManualFallback ? 'Hide Manual Entry' : 'Can\'t find location? Enter manually'}
+          </button>
+        </div>
+      )}
+
+      {/* Manual Fallback Form */}
+      {showManualFallback && (
+        <div
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: borderRadius.lg,
+            padding: spacing.xl,
+            boxShadow: shadows.md,
+            marginBottom: spacing.xl,
+            border: `2px solid ${colors.accent}`,
+          }}
+        >
+          <h3
+            style={{
+              fontSize: typography.fontSize.xl,
+              fontWeight: typography.fontWeight.bold,
+              color: colors.textPrimary,
+              marginBottom: spacing.md,
+            }}
+          >
+            Manual Address Entry
+          </h3>
+          <p style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, marginBottom: spacing.lg }}>
+            Enter location details manually as a fallback
+          </p>
+
+          {isIntersection ? (
+            // Intersection fallback: cross streets + city + state + zip
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md, marginBottom: spacing.md }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                    Cross Street 1 *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCrossStreet1}
+                    onChange={(e) => setManualCrossStreet1(e.target.value)}
+                    placeholder="Main St"
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.base,
+                      border: `1px solid ${colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                    Cross Street 2 *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCrossStreet2}
+                    onChange={(e) => setManualCrossStreet2(e.target.value)}
+                    placeholder="5th Ave"
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.base,
+                      border: `1px solid ${colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: spacing.md, marginBottom: spacing.lg }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                    City *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualCity}
+                    onChange={(e) => setManualCity(e.target.value)}
+                    placeholder="Springfield"
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.base,
+                      border: `1px solid ${colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                    State *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualState}
+                    onChange={(e) => setManualState(e.target.value)}
+                    placeholder="IL"
+                    maxLength={2}
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.base,
+                      border: `1px solid ${colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                    Zip *
+                  </label>
+                  <input
+                    type="text"
+                    value={manualZip}
+                    onChange={(e) => setManualZip(e.target.value)}
+                    placeholder="62701"
+                    maxLength={5}
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      fontSize: typography.fontSize.base,
+                      border: `1px solid ${colors.neutralLight}`,
+                      borderRadius: borderRadius.md,
+                    }}
+                  />
+                </div>
+              </div>
+            </>
+          ) : pinMode === 'dual' ? (
+            // Linear work fallback: start + end addresses
+            <>
+              <div style={{ marginBottom: spacing.md }}>
+                <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                  Start Address *
+                </label>
+                <input
+                  type="text"
+                  value={manualStartAddress}
+                  onChange={(e) => setManualStartAddress(e.target.value)}
+                  placeholder="123 Main St, Springfield, IL 62701"
+                  style={{
+                    width: '100%',
+                    padding: spacing.md,
+                    fontSize: typography.fontSize.base,
+                    border: `1px solid ${colors.neutralLight}`,
+                    borderRadius: borderRadius.md,
+                  }}
+                />
+              </div>
+              <div style={{ marginBottom: spacing.lg }}>
+                <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                  End Address *
+                </label>
+                <input
+                  type="text"
+                  value={manualEndAddress}
+                  onChange={(e) => setManualEndAddress(e.target.value)}
+                  placeholder="456 Main St, Springfield, IL 62701"
+                  style={{
+                    width: '100%',
+                    padding: spacing.md,
+                    fontSize: typography.fontSize.base,
+                    border: `1px solid ${colors.neutralLight}`,
+                    borderRadius: borderRadius.md,
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            // Single location fallback
+            <div style={{ marginBottom: spacing.lg }}>
+              <label style={{ display: 'block', fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs }}>
+                Address *
+              </label>
+              <input
+                type="text"
+                value={manualStartAddress}
+                onChange={(e) => setManualStartAddress(e.target.value)}
+                placeholder="123 Main St, Springfield, IL 62701"
+                style={{
+                  width: '100%',
+                  padding: spacing.md,
+                  fontSize: typography.fontSize.base,
+                  border: `1px solid ${colors.neutralLight}`,
+                  borderRadius: borderRadius.md,
+                }}
+              />
+            </div>
+          )}
+
+          <button
+            onClick={handleManualSubmit}
+            disabled={loadingRoadData || (isIntersection 
+              ? !manualCrossStreet1 || !manualCrossStreet2 || !manualCity || !manualState || !manualZip
+              : pinMode === 'dual'
+                ? !manualStartAddress || !manualEndAddress
+                : !manualStartAddress
+            )}
+            style={{
+              padding: `${spacing.md} ${spacing.xl}`,
+              backgroundColor: loadingRoadData ? colors.neutralLight : colors.primary,
+              color: colors.textLight,
+              fontSize: typography.fontSize.base,
+              fontWeight: typography.fontWeight.bold,
+              border: 'none',
+              borderRadius: borderRadius.md,
+              cursor: loadingRoadData ? 'not-allowed' : 'pointer',
+              width: '100%',
+              opacity: loadingRoadData ? 0.5 : 1,
+            }}
+          >
+            {loadingRoadData ? 'Processing...' : 'Submit Manual Entry'}
+          </button>
+        </div>
+      )}
+
+      {/* Road Data Form (only shows after pins placed and data loaded) */}
+      {hasRoadData && (
         <div
           style={{
             backgroundColor: colors.surface,
@@ -495,7 +875,9 @@ const Step1Location = ({ onNext }: Step1LocationProps) => {
               Work Zone Length (feet)
             </label>
             <p style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, marginBottom: spacing.sm }}>
-              Auto-calculated from drawn line: {planData.roadData.workZoneLengthFeet || 0} feet
+              {pinMode === 'dual' 
+                ? `Auto-calculated from pins: ${planData.roadData.workZoneLengthFeet || 0} feet`
+                : 'Enter work area length in feet'}
             </p>
             <input
               type="number"

@@ -14,6 +14,14 @@ export interface RoadData {
   direction: 'northbound' | 'southbound' | 'eastbound' | 'westbound' | 'bidirectional'
   selectedLanes: number[] // Array of lane indices that are closed
   workZoneLengthFeet: number
+  // Pin/marker coordinates for map interaction
+  startPin?: { lat: number; lng: number }
+  endPin?: { lat: number; lng: number }
+  // Intersection-specific fields
+  crossStreet?: string
+  city?: string
+  state?: string
+  zipCode?: string
 }
 
 // Step 2: Work Timing & Duration

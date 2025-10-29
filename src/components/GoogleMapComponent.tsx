@@ -1,27 +1,31 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { GoogleMap, useJsApiLoader, Polyline, Marker } from '@react-google-maps/api'
 import { colors } from '../styles/theme'
 
-const libraries: ("drawing" | "places" | "geometry")[] = ["drawing", "places", "geometry"]
+const libraries: ("drawing" | "places" | "geometry")[] = ["places", "geometry"]
 
 interface GoogleMapComponentProps {
   center: { lat: number; lng: number }
   zoom?: number
   onLocationSelect?: (location: google.maps.LatLngLiteral) => void
-  onDrawComplete?: (path: google.maps.LatLngLiteral[]) => void
-  workZonePath?: google.maps.LatLngLiteral[]
-  markerPosition?: google.maps.LatLngLiteral
+  onPinsPlaced?: (pins: { start: google.maps.LatLngLiteral; end?: google.maps.LatLngLiteral }) => void
+  pinMode?: 'single' | 'dual' // single for intersection/roadside, dual for roadway/shoulder/bridge
+  startPin?: google.maps.LatLngLiteral
+  endPin?: google.maps.LatLngLiteral
   height?: string
+  showPinControls?: boolean
 }
 
 const GoogleMapComponent = ({
   center,
   zoom = 15,
   onLocationSelect,
-  onDrawComplete,
-  workZonePath = [],
-  markerPosition,
+  onPinsPlaced,
+  pinMode = 'dual',
+  startPin,
+  endPin,
   height = '400px',
+  showPinControls = true,
 }: GoogleMapComponentProps) => {
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
@@ -30,8 +34,9 @@ const GoogleMapComponent = ({
   })
 
   const [, setMap] = useState<google.maps.Map | null>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [currentPath, setCurrentPath] = useState<google.maps.LatLngLiteral[]>([])
+  const [localStartPin, setLocalStartPin] = useState<google.maps.LatLngLiteral | undefined>(startPin)
+  const [localEndPin, setLocalEndPin] = useState<google.maps.LatLngLiteral | undefined>(endPin)
+  const [isPlacingPin, setIsPlacingPin] = useState(false)
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map)
@@ -42,36 +47,68 @@ const GoogleMapComponent = ({
   }, [])
 
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
-    if (e.latLng) {
+    if (e.latLng && isPlacingPin) {
       const position = { lat: e.latLng.lat(), lng: e.latLng.lng() }
 
-      if (isDrawing) {
-        // Add point to current path
-        const newPath = [...currentPath, position]
-        setCurrentPath(newPath)
-      } else if (onLocationSelect) {
-        // Select location for marker
+      if (!localStartPin) {
+        // Place start pin
+        setLocalStartPin(position)
+        
+        // If single pin mode, notify parent immediately
+        if (pinMode === 'single' && onPinsPlaced) {
+          onPinsPlaced({ start: position })
+          setIsPlacingPin(false)
+        }
+      } else if (pinMode === 'dual' && !localEndPin) {
+        // Place end pin
+        setLocalEndPin(position)
+        
+        // Notify parent with both pins
+        if (onPinsPlaced) {
+          onPinsPlaced({ start: localStartPin, end: position })
+        }
+        setIsPlacingPin(false)
+      }
+      
+      // Legacy single location select support
+      if (onLocationSelect && pinMode === 'single') {
         onLocationSelect(position)
       }
     }
-  }, [isDrawing, currentPath, onLocationSelect])
+  }, [isPlacingPin, localStartPin, localEndPin, pinMode, onPinsPlaced, onLocationSelect])
 
-  const handleStartDrawing = () => {
-    setIsDrawing(true)
-    setCurrentPath([])
+  const handleStartPlacingPins = () => {
+    setIsPlacingPin(true)
+    setLocalStartPin(undefined)
+    setLocalEndPin(undefined)
   }
 
-  const handleFinishDrawing = () => {
-    if (currentPath.length > 1 && onDrawComplete) {
-      onDrawComplete(currentPath)
+  const handleClearPins = () => {
+    setLocalStartPin(undefined)
+    setLocalEndPin(undefined)
+    setIsPlacingPin(false)
+  }
+
+  const handleConfirmPins = () => {
+    if (localStartPin && onPinsPlaced) {
+      onPinsPlaced({ 
+        start: localStartPin, 
+        end: pinMode === 'dual' ? localEndPin : undefined 
+      })
+      setIsPlacingPin(false)
     }
-    setIsDrawing(false)
-    setCurrentPath([])
   }
 
-  const handleCancelDrawing = () => {
-    setIsDrawing(false)
-    setCurrentPath([])
+  // Calculate distance between pins for display
+  const calculateDistance = () => {
+    if (localStartPin && localEndPin && window.google?.maps?.geometry) {
+      const start = new window.google.maps.LatLng(localStartPin.lat, localStartPin.lng)
+      const end = new window.google.maps.LatLng(localEndPin.lat, localEndPin.lng)
+      const meters = window.google.maps.geometry.spherical.computeDistanceBetween(start, end)
+      const feet = Math.round(meters * 3.28084)
+      return feet
+    }
+    return 0
   }
 
   if (loadError) {
@@ -83,7 +120,7 @@ const GoogleMapComponent = ({
         justifyContent: 'center',
         backgroundColor: colors.neutralLight,
         borderRadius: '8px',
-        color: colors.textLight,
+        color: colors.textPrimary,
       }}>
         Error loading Google Maps. Please check your API key.
       </div>
@@ -99,7 +136,7 @@ const GoogleMapComponent = ({
         justifyContent: 'center',
         backgroundColor: colors.neutralLight,
         borderRadius: '8px',
-        color: colors.textLight,
+        color: colors.textPrimary,
       }}>
         Loading map...
       </div>
@@ -121,21 +158,16 @@ const GoogleMapComponent = ({
     clickableIcons: false,
   }
 
-  // Polyline options for work zone
-  const workZoneOptions: google.maps.PolylineOptions = {
+  // Polyline connecting two pins (for dual mode)
+  const lineOptions: google.maps.PolylineOptions = {
     strokeColor: colors.primary,
     strokeOpacity: 0.8,
     strokeWeight: 4,
     clickable: false,
   }
 
-  // Polyline options for drawing
-  const drawingOptions: google.maps.PolylineOptions = {
-    strokeColor: colors.accent,
-    strokeOpacity: 0.6,
-    strokeWeight: 3,
-    clickable: false,
-  }
+  const pinsPlaced = pinMode === 'single' ? !!localStartPin : !!(localStartPin && localEndPin)
+  const distance = calculateDistance()
 
   return (
     <div>
@@ -146,111 +178,132 @@ const GoogleMapComponent = ({
         onLoad={onLoad}
         onUnmount={onUnmount}
         onClick={handleMapClick}
-        options={mapOptions}
+        options={{
+          ...mapOptions,
+          cursor: isPlacingPin ? 'crosshair' : 'default',
+        }}
       >
-        {/* Marker for selected location */}
-        {markerPosition && (
+        {/* Start Pin */}
+        {localStartPin && (
           <Marker
-            position={markerPosition}
+            position={localStartPin}
+            label={{
+              text: pinMode === 'single' ? '📍' : 'START',
+              color: colors.textLight,
+              fontWeight: 'bold',
+              fontSize: '12px',
+            }}
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
-              scale: 8,
+              scale: pinMode === 'single' ? 10 : 12,
               fillColor: colors.primary,
               fillOpacity: 1,
               strokeColor: colors.surface,
-              strokeWeight: 2,
+              strokeWeight: 3,
             }}
           />
         )}
 
-        {/* Work zone path (saved) */}
-        {workZonePath.length > 1 && (
-          <Polyline
-            path={workZonePath}
-            options={workZoneOptions}
-          />
-        )}
-
-        {/* Current drawing path */}
-        {isDrawing && currentPath.length > 0 && (
-          <Polyline
-            path={currentPath}
-            options={drawingOptions}
-          />
-        )}
-
-        {/* Drawing points */}
-        {isDrawing && currentPath.map((point, index) => (
+        {/* End Pin (dual mode only) */}
+        {pinMode === 'dual' && localEndPin && (
           <Marker
-            key={index}
-            position={point}
+            position={localEndPin}
+            label={{
+              text: 'END',
+              color: colors.textLight,
+              fontWeight: 'bold',
+              fontSize: '12px',
+            }}
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
-              scale: 5,
-              fillColor: colors.accent,
+              scale: 12,
+              fillColor: colors.error,
               fillOpacity: 1,
               strokeColor: colors.surface,
-              strokeWeight: 1,
+              strokeWeight: 3,
             }}
           />
-        ))}
+        )}
+
+        {/* Line connecting pins (dual mode only) */}
+        {pinMode === 'dual' && localStartPin && localEndPin && (
+          <Polyline
+            path={[localStartPin, localEndPin]}
+            options={lineOptions}
+          />
+        )}
       </GoogleMap>
 
-      {/* Drawing controls */}
-      {onDrawComplete && (
+      {/* Pin Controls */}
+      {showPinControls && (
         <div style={{
           marginTop: '12px',
           display: 'flex',
           gap: '8px',
           justifyContent: 'center',
+          flexWrap: 'wrap',
         }}>
-          {!isDrawing ? (
+          {!isPlacingPin && !pinsPlaced && (
             <button
-              onClick={handleStartDrawing}
+              onClick={handleStartPlacingPins}
               style={{
-                padding: '8px 16px',
+                padding: '10px 20px',
                 backgroundColor: colors.primary,
                 color: colors.textLight,
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 fontWeight: 600,
+                fontSize: '14px',
               }}
             >
-              Draw Work Zone
+              📍 {pinMode === 'single' ? 'Place Pin on Map' : 'Place Start & End Pins'}
             </button>
-          ) : (
+          )}
+
+          {isPlacingPin && (
+            <div style={{
+              padding: '10px 16px',
+              backgroundColor: colors.accent,
+              color: colors.textPrimary,
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '14px',
+            }}>
+              {!localStartPin && `Click on map to place ${pinMode === 'single' ? 'pin' : 'START pin'}`}
+              {localStartPin && !localEndPin && pinMode === 'dual' && 'Click on map to place END pin'}
+            </div>
+          )}
+
+          {pinsPlaced && (
             <>
               <button
-                onClick={handleFinishDrawing}
-                disabled={currentPath.length < 2}
+                onClick={handleClearPins}
                 style={{
-                  padding: '8px 16px',
-                  backgroundColor: currentPath.length < 2 ? colors.neutralLight : colors.success,
-                  color: colors.textLight,
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: currentPath.length < 2 ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                  opacity: currentPath.length < 2 ? 0.5 : 1,
-                }}
-              >
-                Finish Drawing ({currentPath.length} points)
-              </button>
-              <button
-                onClick={handleCancelDrawing}
-                style={{
-                  padding: '8px 16px',
+                  padding: '10px 20px',
                   backgroundColor: colors.neutral,
                   color: colors.textLight,
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer',
                   fontWeight: 600,
+                  fontSize: '14px',
                 }}
               >
-                Cancel
+                Clear Pins
               </button>
+              {pinMode === 'dual' && distance > 0 && (
+                <div style={{
+                  padding: '10px 16px',
+                  backgroundColor: colors.success,
+                  color: colors.textLight,
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                }}>
+                  ✓ Distance: {distance.toLocaleString()} feet
+                </div>
+              )}
             </>
           )}
         </div>
